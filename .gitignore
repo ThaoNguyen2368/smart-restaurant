@@ -1,0 +1,78 @@
+# --- Environment and Secrets ---
+.env
+.env.*
+!.env.example
+backend/.env
+backend/.env.*
+!backend/.env.example
+
+# --- Dependencies ---
+node_modules/
+**/node_modules/
+venv/
+.venv/
+env/
+.env/
+pip-log.txt
+pip-delete-this-directory.txt
+
+# --- Build Output ---
+dist/
+**/dist/
+build/
+**/build/
+out/
+.next/
+
+# --- Python Cache and Test Output ---
+__pycache__/
+**/*/__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+.coverage.*
+htmlcov/
+.tox/
+.nox/
+.cache/
+nosetests.xml
+coverage.xml
+*.cover
+*.pyo
+
+# --- TypeScript and Frontend Cache ---
+*.tsbuildinfo
+.vite/
+.npm
+.eslintcache
+.stylelintcache
+
+# --- Local Docker/Runtime Artifacts ---
+smart-restaurant-os-docker-package*.zip
+*.log
+*.sqlite
+*.db
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# --- Editor and OS Files ---
+.idea/
+.vscode/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+desktop.ini
+*.sublime-project
+*.sublime-workspace
+
+# --- Project Specific ---
+agent_bootstrap.md
+*.rule.md
+skill.md
+smart_restaurant_os_v2.md
+

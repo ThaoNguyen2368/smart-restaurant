@@ -1,0 +1,7 @@
+{
+  "name": "smart-restaurant-os-frontend",
+  "private": true,
+  "workspaces": [
+    "packages/*"
+  ]
+}

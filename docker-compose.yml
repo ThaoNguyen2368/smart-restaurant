@@ -1,0 +1,139 @@
+services:
+  backend:
+    build: ./backend
+    environment:
+      - DATABASE_URL=postgresql://app_user:${DB_PASSWORD}@db:5432/smart_restaurant
+      - REDIS_URL=redis://redis:6379/0
+      - SECRET_KEY=${JWT_SECRET}
+      - JWT_REFRESH_SECRET=${JWT_REFRESH_SECRET}
+      - ENVIRONMENT=local
+      - ALLOWED_ORIGINS=["http://localhost:3001","http://localhost:3002","http://localhost:3003","http://localhost:3004","http://localhost:3005"]
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    ports:
+      - "8000:8000"
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8000/health', timeout=3).read()\""]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
+  db:
+    image: postgres:15-alpine
+    environment:
+      POSTGRES_DB: smart_restaurant
+      POSTGRES_USER: app_user
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./scripts/init_db.sql:/docker-entrypoint-initdb.d/init.sql
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U app_user -d smart_restaurant"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  customer-web:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      args:
+        APP_NAME: customer-web
+        VITE_API_URL: ${PUBLIC_API_URL:-http://localhost:8000/api}
+    depends_on:
+      backend:
+        condition: service_healthy
+    ports:
+      - "3001:80"
+    restart: unless-stopped
+
+  staff-web:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      args:
+        APP_NAME: staff-web
+        VITE_API_URL: ${PUBLIC_API_URL:-http://localhost:8000/api}
+    depends_on:
+      backend:
+        condition: service_healthy
+    ports:
+      - "3002:80"
+    restart: unless-stopped
+
+  cashier-web:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      args:
+        APP_NAME: cashier-web
+        VITE_API_URL: ${PUBLIC_API_URL:-http://localhost:8000/api}
+    depends_on:
+      backend:
+        condition: service_healthy
+    ports:
+      - "3003:80"
+    restart: unless-stopped
+
+  kitchen-web:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      args:
+        APP_NAME: kitchen-web
+        VITE_API_URL: ${PUBLIC_API_URL:-http://localhost:8000/api}
+    depends_on:
+      backend:
+        condition: service_healthy
+    ports:
+      - "3004:80"
+    restart: unless-stopped
+
+  admin-portal:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      args:
+        APP_NAME: admin-portal
+        VITE_API_URL: ${PUBLIC_API_URL:-http://localhost:8000/api}
+    depends_on:
+      backend:
+        condition: service_healthy
+    ports:
+      - "3005:80"
+    restart: unless-stopped
+
+  seed:
+    build: ./backend
+    profiles: ["tools"]
+    environment:
+      - DATABASE_URL=postgresql://app_user:${DB_PASSWORD}@db:5432/smart_restaurant
+      - REDIS_URL=redis://redis:6379/0
+      - SECRET_KEY=${JWT_SECRET}
+      - JWT_REFRESH_SECRET=${JWT_REFRESH_SECRET}
+      - ENVIRONMENT=local
+    depends_on:
+      backend:
+        condition: service_healthy
+    command: ["python", "seed.py"]
+
+volumes:
+  postgres_data:
