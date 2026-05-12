@@ -71,8 +71,8 @@ desktop.ini
 *.sublime-workspace
 
 # --- Project Specific ---
-agent_bootstrap.md
-*.rule.md
-skill.md
-smart_restaurant_os_v2.md
+# agent_bootstrap.md
+# *.rule.md
+# skill.md
+# smart_restaurant_os_v2.md
 
