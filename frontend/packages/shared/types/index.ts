@@ -1,4 +1,19 @@
 // Domain status enums — must match DB CHECK constraints exactly
+export interface MenuItem {
+  id: number;
+  category_id: number;
+  name: string;
+  description: string;
+  price: string;
+  image_url: string;
+  is_available: boolean;
+}
+
+export interface Category {
+  id: number;
+  name: string;
+}
+
 export type SessionStatus = 'open' | 'waiting_payment' | 'closed' | 'merged';
 export type TableStatus = 'empty' | 'occupied' | 'waiting_payment';
 export type CookingStatus = 'pending' | 'confirmed' | 'cooking' | 'done' | 'served' | 'cancelled';

@@ -11,6 +11,7 @@ from app.models.table import Table
 from app.models.tax_config import TaxConfig
 from datetime import date
 
+# pyrefly: ignore [missing-import]
 from sqlalchemy import text
 
 db = SessionLocal()
@@ -43,14 +44,78 @@ try:
 
     # 4. Tạo Menu Items
     items = [
-        MenuItem(category_id=cats[0].id, name="Gỏi cuốn", price=35000, display_order=1, description="Gỏi cuốn tôm thịt truyền thống"),
-        MenuItem(category_id=cats[0].id, name="Chả giò", price=45000, display_order=2, description="Chả giò giòn rụm"),
-        MenuItem(category_id=cats[1].id, name="Phở bò", price=65000, display_order=1, description="Phở bò tái nạm"),
-        MenuItem(category_id=cats[1].id, name="Cơm tấm sườn", price=55000, display_order=2, description="Cơm tấm sườn nướng"),
-        MenuItem(category_id=cats[1].id, name="Bún chả", price=60000, display_order=3, description="Bún chả Hà Nội"),
-        MenuItem(category_id=cats[2].id, name="Trà đá", price=10000, display_order=1, description="Trà đá mát lạnh"),
-        MenuItem(category_id=cats[2].id, name="Cà phê sữa đá", price=29000, display_order=2, description="Cà phê sữa đá Việt Nam"),
-        MenuItem(category_id=cats[3].id, name="Chè ba màu", price=25000, display_order=1, description="Chè ba màu truyền thống"),
+        MenuItem(
+            category_id=cats[0].id, 
+            name="Gỏi cuốn", 
+            price=45000, 
+            display_order=1, 
+            description="Gỏi cuốn tôm thịt", 
+            image_url="/images/goi_cuon_tom_thit.jpg"
+        ),
+        MenuItem(
+            category_id=cats[0].id, 
+            name="Chả giò", 
+            price=45000, 
+            display_order=2, 
+            description="Chả giò giòn rụm", 
+            image_url="/images/cha_gio.jpg"
+        ),
+        MenuItem(
+            category_id=cats[1].id, 
+            name="Phở bò", 
+            price=65000, 
+            display_order=1, 
+            description="Phở bò tái nạm", 
+            image_url="/images/pho_bo.jpg"
+        ),
+        MenuItem(
+            category_id=cats[1].id, 
+            name="Cơm tấm sườn", 
+            price=55000, 
+            display_order=2, 
+            description="Cơm tấm sườn bì chả", 
+            image_url="/images/com_tam_suon_bi_cha.jpg"
+        ),
+        MenuItem(
+            category_id=cats[1].id, 
+            name="Bún chả", 
+            price=55000, 
+            display_order=3, 
+            description="Bún chả Hà Nội", 
+            image_url="/images/bun_cha.jpg"
+        ),
+        MenuItem(
+            category_id=cats[2].id, 
+            name="Bạc xỉu", 
+            price=30000, 
+            display_order=1, 
+            description="Bạc xỉu thơm béo", 
+            image_url="/images/bac_xiu.jpg"
+        ),
+        MenuItem(
+            category_id=cats[2].id, 
+            name="Cà phê sữa đá", 
+            price=25000, 
+            display_order=2, 
+            description="Cà phê sữa đá truyền thống", 
+            image_url="/images/ca_phe_sua.jpg"
+        ),
+        MenuItem(
+            category_id=cats[3].id, 
+            name="Chè ba màu", 
+            price=20000, 
+            display_order=1, 
+            description="Chè ba màu truyền thống", 
+            image_url="/images/che_ba_mau.jpg"
+        ),
+        MenuItem(
+            category_id=cats[3].id, 
+            name="Bánh flant", 
+            price=20000, 
+            display_order=2, 
+            description="Bánh flant truyền thống", 
+            image_url="/images/banh_flant.jpg"
+        )
     ]
     db.add_all(items)
 
