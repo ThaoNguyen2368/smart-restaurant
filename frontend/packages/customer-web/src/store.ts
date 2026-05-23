@@ -20,6 +20,7 @@ interface CustomerState {
   addToCart: (item: OrderItem) => void;
   removeFromCart: (itemId: number) => void;
   updateQuantity: (itemId: number, quantity: number) => void;
+  updateNote: (itemId: number, note: string) => void;
   clearCart: () => void;
 }
 
@@ -64,6 +65,13 @@ export const useCustomerStore = create<CustomerState>()(
         set((state) => ({
           cart: state.cart.map((i) =>
             i.item_id === itemId ? { ...i, quantity } : i,
+          ),
+        })),
+
+      updateNote: (itemId, note) =>
+        set((state) => ({
+          cart: state.cart.map((i) =>
+            i.item_id === itemId ? { ...i, note } : i,
           ),
         })),
 

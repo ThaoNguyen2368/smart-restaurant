@@ -10,7 +10,7 @@ from app.middleware.rbac import require_roles
 from app.models.staff_user import StaffUser
 from app.models.table import Table
 from app.schemas.session import TableTransferRequest, SessionResponse
-from app.schemas.order import CancelRequest, OrderResponse, SubstituteItemRequest
+from app.schemas.order import CancelRequest, OrderResponse, SubstituteItemRequest, OrderUpdateRequest
 from app.schemas.common import api_response
 from app.services import order_service, session_service, kitchen_service
 
@@ -45,6 +45,20 @@ async def confirm_order(order_id: int, current_user: StaffUser = Depends(get_cur
     user = require_roles("staff", "manager", "admin")(current_user)
     order = await order_service.confirm_order(db, order_id, user.id, user.role)
     return api_response({"order_id": order.id, "status": order.order_status})
+
+
+@router.patch("/orders/{order_id}/update-details")
+async def update_order_details(
+    order_id: int,
+    data: OrderUpdateRequest,
+    current_user: StaffUser = Depends(get_current_user),
+    db: DBSession = Depends(get_db)
+):
+    """Update details of a pending order (quantity, note, etc.) before confirmation."""
+    user = require_roles("staff", "manager", "admin")(current_user)
+    items_list = [{"item_id": i.item_id, "quantity": i.quantity, "note": i.note} for i in data.items]
+    order = await order_service.update_pending_order(db, order_id, items_list, user.id, user.role)
+    return api_response({"order_id": order.id, "total_price": str(order.total_price), "status": order.order_status})
 
 
 @router.patch("/orders/{order_id}/reject")

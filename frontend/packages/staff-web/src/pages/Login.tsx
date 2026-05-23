@@ -18,7 +18,7 @@ export default function Login() {
       setLoading(true);
       setError('');
       const res = await api.post('/auth/login', { username, password });
-      login(res.data.access_token);
+      login(res.data.access_token, res.data.refresh_token);
       navigate('/');
     } catch (err: any) {
       setError(err.response?.data?.detail || 'Sai tên đăng nhập hoặc mật khẩu');

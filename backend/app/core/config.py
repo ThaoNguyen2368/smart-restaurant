@@ -9,6 +9,9 @@ class Settings(BaseSettings):
     # CORS: Explicit allowlist - never allow_origins=["*"] (backend.rule.md Section 8)
     ALLOWED_ORIGINS: List[str] = [
         "http://localhost:3000",
+        "http://localhost:3001",  # customer-web
+        "http://localhost:3002",  # staff-web
+        "http://localhost:3003",  # cashier-web
         "http://localhost:5173",
     ]
     
@@ -16,7 +19,7 @@ class Settings(BaseSettings):
     SECRET_KEY: str = "super-secret-key-change-in-production"
     JWT_REFRESH_SECRET: str = "refresh-secret-key-change-in-production"
     ALGORITHM: str = "HS256"
-    ACCESS_TOKEN_EXPIRE_MINUTES: int = 15
+    ACCESS_TOKEN_EXPIRE_MINUTES: int = 480  # 8 hours = one shift
     REFRESH_TOKEN_EXPIRE_HOURS: int = 8
     
     # Database Configuration (database.rule.md Section 10)

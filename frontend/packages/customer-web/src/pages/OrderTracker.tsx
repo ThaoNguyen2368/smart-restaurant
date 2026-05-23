@@ -11,6 +11,8 @@ interface InvoiceDetail {
   quantity: number;
   unit_price: number;
   cooking_status: string;
+  note?: string | null;
+  updated_at?: string | null;
 }
 
 interface InvoiceData {
@@ -275,76 +277,91 @@ export default function OrderTracker() {
           marginBottom: "24px",
         }}
       >
-        {details.map((detail) => (
-          <div
-            key={detail.id}
-            className="glass"
-            style={{ padding: "16px", borderRadius: "var(--border-radius-md)" }}
-          >
+        {details.map((detail) => {
+          const updateTime = detail.updated_at ? new Date(detail.updated_at).toLocaleTimeString("vi-VN", { hour: "2-digit", minute: "2-digit" }) : null;
+          return (
             <div
-              style={{
-                display: "flex",
-                justifyContent: "space-between",
-                marginBottom: "8px",
-              }}
+              key={detail.id}
+              className="glass"
+              style={{ padding: "16px", borderRadius: "var(--border-radius-md)" }}
             >
-              <div style={{ fontWeight: 600 }}>
-                <span
-                  style={{ color: "var(--accent-primary)", marginRight: "8px" }}
-                >
-                  x{detail.quantity}
-                </span>
-                {detail.item_name}
-              </div>
-              <div style={{ fontWeight: 600 }}>
-                {(detail.unit_price * detail.quantity).toLocaleString()}đ
-              </div>
-            </div>
-
-            <div
-              style={{
-                display: "flex",
-                justifyContent: "space-between",
-                alignItems: "center",
-              }}
-            >
-              <span
+              <div
                 style={{
-                  fontSize: "0.85rem",
-                  color: getStatusColor(detail.cooking_status),
-                  fontWeight: 600,
+                  display: "flex",
+                  justifyContent: "space-between",
+                  marginBottom: "8px",
                 }}
               >
-                {getStatusText(detail.cooking_status)}
-              </span>
+                <div style={{ fontWeight: 600 }}>
+                  <span
+                    style={{ color: "var(--accent-primary)", marginRight: "8px" }}
+                  >
+                    x{detail.quantity}
+                  </span>
+                  {detail.item_name}
+                  {detail.note && (
+                    <span style={{ fontSize: "0.8rem", color: "var(--accent-primary)", fontStyle: "italic", display: "block", marginTop: "2px", fontWeight: 500 }}>
+                      Ghi chú: {detail.note}
+                    </span>
+                  )}
+                </div>
+                <div style={{ fontWeight: 600 }}>
+                  {(detail.unit_price * detail.quantity).toLocaleString()}đ
+                </div>
+              </div>
 
-              {detail.cooking_status === "pending" && (
-                <button
-                  onClick={() => handleCancelItem(detail.id)}
-                  style={{
-                    background: "transparent",
-                    border: "1px solid var(--accent-danger)",
-                    color: "var(--accent-danger)",
-                    padding: "4px 12px",
-                    borderRadius: "12px",
-                    fontSize: "0.8rem",
-                    cursor: "pointer",
-                  }}
-                >
-                  <X
-                    size={12}
+              <div
+                style={{
+                  display: "flex",
+                  justifyContent: "space-between",
+                  alignItems: "center",
+                }}
+              >
+                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start' }}>
+                  <span
                     style={{
-                      display: "inline",
-                      verticalAlign: "middle",
-                      marginRight: "4px",
+                      fontSize: "0.85rem",
+                      color: getStatusColor(detail.cooking_status),
+                      fontWeight: 600,
                     }}
-                  />
-                  Huỷ
-                </button>
-              )}
+                  >
+                    {getStatusText(detail.cooking_status)}
+                  </span>
+                  {updateTime && (
+                    <span style={{ fontSize: "0.7rem", color: "var(--text-secondary)", marginTop: "2px" }}>
+                      Cập nhật: {updateTime}
+                    </span>
+                  )}
+                </div>
+
+                {detail.cooking_status === "pending" && (
+                  <button
+                    onClick={() => handleCancelItem(detail.id)}
+                    style={{
+                      background: "transparent",
+                      border: "1px solid var(--accent-danger)",
+                      color: "var(--accent-danger)",
+                      padding: "4px 12px",
+                      borderRadius: "12px",
+                      fontSize: "0.8rem",
+                      cursor: "pointer",
+                    }}
+                  >
+                    <X
+                      size={12}
+                      style={{
+                        display: "inline",
+                        verticalAlign: "middle",
+                        marginRight: "4px",
+                      }}
+                    />
+                    Huỷ
+                  </button>
+                )}
+              </div>
             </div>
-          </div>
-        ))}
+          );
+        })}
       </div>
 
       {invoice && details.length > 0 && (

@@ -115,6 +115,8 @@ def get_invoice(db: DBSession, session_id: int) -> dict:
                 "unit_price": d.unit_price,
                 "cooking_status": d.cooking_status,
                 "split_label": d.split_label,
+                "note": d.note,
+                "updated_at": (d.updated_at or d.created_at).isoformat() if (d.updated_at or d.created_at) else None,
             })
             
     for lbl, g in groups.items():

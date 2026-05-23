@@ -102,3 +102,14 @@ class SubstituteItemRequest(BaseModel):
     """Staff substitutes an out-of-stock item with a new one."""
     new_item_id: int
 
+
+class OrderItemUpdate(BaseModel):
+    item_id: int
+    quantity: int = Field(..., gt=0)
+    note: Optional[str] = None
+
+
+class OrderUpdateRequest(BaseModel):
+    items: list[OrderItemUpdate]
+
+

@@ -8,6 +8,7 @@ services:
       - JWT_REFRESH_SECRET=${JWT_REFRESH_SECRET}
       - ENVIRONMENT=local
       - ALLOWED_ORIGINS=["http://localhost:3001","http://localhost:3002","http://localhost:3003","http://localhost:3004","http://localhost:3005"]
+      - ACCESS_TOKEN_EXPIRE_MINUTES=480
     depends_on:
       db:
         condition: service_healthy

@@ -4,9 +4,11 @@ import { api } from "../api";
 import { useCustomerStore } from "../store";
 import { ArrowLeft, Trash2, Plus, Minus, Loader2 } from "lucide-react";
 
+const PRESET_NOTES = ["Ít cay", "Không hành", "Thêm phô mai", "Không đá", "Ít ngọt", "Nhiều đá"];
+
 export default function CartPage() {
   const navigate = useNavigate();
-  const { cart, removeFromCart, updateQuantity, clearCart } = useCustomerStore();
+  const { cart, removeFromCart, updateQuantity, updateNote, clearCart } = useCustomerStore();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
@@ -17,6 +19,21 @@ export default function CartPage() {
   const vatAmount = subtotal * 0.08;
   const serviceCharge = subtotal * 0.05;
   const totalEstimate = subtotal + vatAmount + serviceCharge;
+
+  const handlePresetClick = (itemId: number, currentNote: string, preset: string) => {
+    const note = currentNote || "";
+    let newNote = "";
+    if (note.includes(preset)) {
+      newNote = note
+        .split(",")
+        .map((s) => s.trim())
+        .filter((s) => s !== preset)
+        .join(", ");
+    } else {
+      newNote = note ? `${note}, ${preset}` : preset;
+    }
+    updateNote(itemId, newNote);
+  };
 
   const handleSubmit = async () => {
     if (cart.length === 0) return;
@@ -48,7 +65,6 @@ export default function CartPage() {
   };
 
   return (
-    // THÊM paddingTop: 80px để đẩy nội dung xuống dưới Header
     <div className="animate-fade-in" style={{ paddingTop: "80px", paddingBottom: "260px", minHeight: "100vh", background: "var(--bg-primary)" }}>
       <header
         style={{
@@ -61,7 +77,7 @@ export default function CartPage() {
           display: "flex",
           alignItems: "center",
           gap: "16px",
-          background: "var(--bg-primary)", // Nền solid để không bị trong suốt khi scroll
+          background: "var(--bg-primary)",
           borderBottom: "1px solid var(--glass-border)",
         }}
       >
@@ -134,7 +150,7 @@ export default function CartPage() {
                     {item.name}
                   </h4>
                   <button
-                    className="btn-delete-hover" // CẬP NHẬT class hover xóa
+                    className="btn-delete-hover"
                     style={{
                       background: "transparent",
                       border: "none",
@@ -166,7 +182,6 @@ export default function CartPage() {
                     {item.price.toLocaleString("vi-VN")}đ
                   </span>
 
-                  {/* THIẾT KẾ LẠI BỘ ĐẾM SỐ LƯỢNG */}
                   <div
                     style={{
                       display: "flex",
@@ -223,6 +238,59 @@ export default function CartPage() {
                     </button>
                   </div>
                 </div>
+
+                {/* Khu vực Ghi chú & Preset chọn nhanh */}
+                <div style={{ marginTop: "16px", paddingTop: "12px", borderTop: "1px dashed var(--glass-border)" }}>
+                  <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
+                    <label style={{ fontSize: "0.85rem", fontWeight: 500, color: "var(--text-secondary)" }}>
+                      Ghi chú món ăn:
+                    </label>
+                    <input
+                      type="text"
+                      placeholder="Ví dụ: Ít cay, không hành, thêm phô mai..."
+                      value={item.note || ""}
+                      onChange={(e) => updateNote(item.item_id, e.target.value)}
+                      style={{
+                        width: "100%",
+                        padding: "8px 12px",
+                        borderRadius: "8px",
+                        border: "1px solid var(--glass-border)",
+                        background: "rgba(0,0,0,0.02)",
+                        color: "var(--text-primary)",
+                        fontSize: "0.9rem",
+                        outline: "none",
+                        transition: "var(--transition-fast)",
+                      }}
+                    />
+                  </div>
+                  {/* Preset Tags */}
+                  <div style={{ display: "flex", flexWrap: "wrap", gap: "6px", marginTop: "8px" }}>
+                    {PRESET_NOTES.map((preset) => {
+                      const isActive = (item.note || "").includes(preset);
+                      return (
+                        <button
+                          key={preset}
+                          onClick={() => handlePresetClick(item.item_id, item.note || "", preset)}
+                          style={{
+                            padding: "4px 10px",
+                            borderRadius: "var(--border-radius-pill)",
+                            border: "none",
+                            fontSize: "0.75rem",
+                            fontWeight: 500,
+                            cursor: "pointer",
+                            transition: "var(--transition-fast)",
+                            background: isActive ? "rgba(255, 71, 87, 0.15)" : "var(--bg-tertiary)",
+                            color: isActive ? "var(--accent-primary)" : "var(--text-secondary)",
+                            boxShadow: isActive ? "0 2px 8px rgba(255, 71, 87, 0.1)" : "none",
+                          }}
+                        >
+                          {preset}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+
               </div>
             ))}
 

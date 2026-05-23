@@ -22,6 +22,7 @@ interface InvoiceDetail {
   quantity: number;
   unit_price: number | string;
   cooking_status: string;
+  note?: string | null;
 }
 
 interface PaymentRecord {
@@ -462,6 +463,11 @@ export default function Dashboard() {
                       <div key={detail.id} className="line-item">
                         <div>
                           <p>{detail.item_name}</p>
+                          {detail.note && (
+                            <span style={{ display: 'block', fontSize: '0.8rem', color: 'var(--accent-primary)', fontStyle: 'italic', marginTop: '2px' }}>
+                              Ghi chú: {detail.note}
+                            </span>
+                          )}
                           <span>
                             x{detail.quantity} • {formatVnd(detail.unit_price)}
                           </span>
@@ -623,14 +629,23 @@ export default function Dashboard() {
           </div>
           <div className="print-lines">
             {invoice.details.map((detail) => (
-              <div key={detail.id} className="print-line">
-                <span>{detail.item_name}</span>
-                <span>
-                  x{detail.quantity} · {formatVnd(detail.unit_price)}
-                </span>
-                <strong>
-                  {formatVnd(Number(detail.unit_price) * detail.quantity)}
-                </strong>
+              <div key={detail.id} className="print-line" style={{ display: 'flex', flexDirection: 'column', alignItems: 'stretch', borderBottom: '1px dashed #eee', padding: '6px 0' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                  <span>{detail.item_name}</span>
+                  <strong>
+                    {formatVnd(Number(detail.unit_price) * detail.quantity)}
+                  </strong>
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.85rem', color: '#666' }}>
+                  <span>
+                    x{detail.quantity} · {formatVnd(detail.unit_price)}
+                  </span>
+                  {detail.note && (
+                    <span style={{ fontStyle: 'italic', color: '#ff4757' }}>
+                      Ghi chú: {detail.note}
+                    </span>
+                  )}
+                </div>
               </div>
             ))}
           </div>
