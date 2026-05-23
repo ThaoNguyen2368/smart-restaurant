@@ -19,7 +19,7 @@ def login(data: LoginRequest, db: DBSession = Depends(get_db)):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid credentials")
 
     return TokenResponse(
-        access_token=create_access_token({"sub": str(user.id), "role": user.role}),
+        access_token=create_access_token({"sub": str(user.id), "role": user.role, "display_name": user.display_name}),
         refresh_token=create_refresh_token({"sub": str(user.id)}),
     )
 
@@ -35,6 +35,6 @@ def refresh_token(data: RefreshRequest, db: DBSession = Depends(get_db)):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="User not found")
 
     return TokenResponse(
-        access_token=create_access_token({"sub": str(user.id), "role": user.role}),
+        access_token=create_access_token({"sub": str(user.id), "role": user.role, "display_name": user.display_name}),
         refresh_token=create_refresh_token({"sub": str(user.id)}),
     )

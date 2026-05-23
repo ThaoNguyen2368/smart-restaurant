@@ -3,23 +3,33 @@ import { useNavigate } from "react-router-dom";
 import { api } from "../api";
 import { useAuthStore } from "../store";
 import {
-  LayoutDashboard,
-  CheckSquare,
-  LogOut,
+  LayoutGrid,
+  ClipboardList,
+  Info,
   Check,
   X,
   Plus,
   Minus,
   Clock,
-  User,
+  Users,
   Coffee,
   DollarSign,
   AlertCircle,
   ArrowLeftRight,
-  Sparkles,
   Loader2,
-  Trash2
+  Trash2,
+  Bell,
+  Search,
+  GitMerge,
+  SlidersHorizontal,
+  ChevronDown,
+  LogOut,
+  Wifi,
 } from "lucide-react";
+
+/* ================================================================
+   TYPES
+   ================================================================ */
 
 interface Table {
   id: number;
@@ -67,7 +77,9 @@ interface Toast {
   type: "success" | "warning" | "info" | "error";
 }
 
-// Preset notes deleted since order creation tab was removed
+/* ================================================================
+   HELPERS
+   ================================================================ */
 
 const getTableCapacity = (tableNum: number) => {
   if (tableNum <= 4) return 2;
@@ -75,30 +87,63 @@ const getTableCapacity = (tableNum: number) => {
   return 8;
 };
 
+const padNumber = (n: number) => String(n).padStart(2, "0");
+
+/* Simple chair/table SVG icon matching the screenshot */
+const TableSvgIcon = ({ size = 28 }: { size?: number }) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+    <path d="M4 8C4 6.89543 4.89543 6 6 6H18C19.1046 6 20 6.89543 20 8V10H4V8Z" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+    <rect x="3" y="10" width="18" height="3" rx="1" stroke="currentColor" strokeWidth="1.5"/>
+    <line x1="6" y1="13" x2="6" y2="18" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
+    <line x1="18" y1="13" x2="18" y2="18" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
+    <line x1="4" y1="18" x2="8" y2="18" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
+    <line x1="16" y1="18" x2="20" y2="18" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
+  </svg>
+);
+
+/* ================================================================
+   MAIN COMPONENT
+   ================================================================ */
+
 export default function Dashboard() {
-  const [activeTab, setActiveTab] = useState<"tables" | "orders">("tables");
+  /* ---- State ---- */
+  const [activeTab, setActiveTab] = useState<"tables" | "orders" | "details" | "cancellations">("tables");
   const [tables, setTables] = useState<Table[]>([]);
   const [pendingOrders, setPendingOrders] = useState<Order[]>([]);
-  
-  // Full Menu Items & Categories
   const [menuItemMap, setMenuItemMap] = useState<Record<number, string>>({});
-  
-  // Real-time table progress/invoices map
   const [tableActiveInvoices, setTableActiveInvoices] = useState<Record<number, any>>({});
-  
   const [authError, setAuthError] = useState(false);
   const [wsState, setWsState] = useState<"connected" | "connecting" | "disconnected">("connecting");
-  
-  // Filtering & Search
-  const [floorFilter, setFloorFilter] = useState<string>("All");
-  
-  // Slide-over side panel states
+  const [isMerging, setIsMerging] = useState(false);
+  const [pendingCancelRequests, setPendingCancelRequests] = useState<any[]>(() => {
+    try {
+      return JSON.parse(localStorage.getItem("pending_cancel_requests") || "[]");
+    } catch {
+      return [];
+    }
+  });
+
+  useEffect(() => {
+    localStorage.setItem("pending_cancel_requests", JSON.stringify(pendingCancelRequests));
+  }, [pendingCancelRequests]);
+
+  /* Filters */
+  const [capacityFilter, setCapacityFilter] = useState<"all" | number>("all");
+  const [searchQuery, setSearchQuery] = useState("");
+
+  /* Side panel */
   const [selectedTable, setSelectedTable] = useState<Table | null>(null);
   const [isTransferring, setIsTransferring] = useState(false);
-  
-  // Toast notifications state
+
+  /* Toasts */
   const [toasts, setToasts] = useState<Toast[]>([]);
   const nextToastId = useRef(0);
+
+  /* Clock */
+  const [currentTime, setCurrentTime] = useState(new Date());
+
+  const [showUserDropdown, setShowUserDropdown] = useState(false);
+  const userDropdownRef = useRef<HTMLDivElement>(null);
 
   const logout = useAuthStore((state) => state.logout);
   const user = useAuthStore((state) => state.user);
@@ -109,21 +154,38 @@ export default function Dashboard() {
     navigate("/login");
   };
 
-  // Toast Helpers
+  /* ---- Clock tick ---- */
+  useEffect(() => {
+    const timer = setInterval(() => setCurrentTime(new Date()), 1000);
+    return () => clearInterval(timer);
+  }, []);
+
+  /* ---- Click outside user dropdown ---- */
+  useEffect(() => {
+    function handleClickOutside(event: MouseEvent) {
+      if (userDropdownRef.current && !userDropdownRef.current.contains(event.target as Node)) {
+        setShowUserDropdown(false);
+      }
+    }
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => {
+      document.removeEventListener("mousedown", handleClickOutside);
+    };
+  }, []);
+
+  /* ---- Toast helper ---- */
   const addToast = (message: string, type: Toast["type"] = "info") => {
     const id = nextToastId.current++;
-    setToasts(prev => [...prev, { id, message, type }]);
+    setToasts((prev) => [...prev, { id, message, type }]);
     setTimeout(() => {
-      setToasts(prev => prev.filter(t => t.id !== id));
+      setToasts((prev) => prev.filter((t) => t.id !== id));
     }, 4000);
   };
 
-  // WebSocket Connection
+  /* ---- WebSocket + Polling ---- */
   useEffect(() => {
     fetchData();
     fetchMenu();
-    
-    // Safety net polling
     const interval = setInterval(fetchData, 8000);
 
     const token = localStorage.getItem("staff_token");
@@ -133,38 +195,36 @@ export default function Dashboard() {
       const wsBase = base.replace("http", "ws").replace(/\/api\/?$/, "");
       ws = new WebSocket(`${wsBase}/ws/staff?token=${token}`);
 
-      ws.onopen = () => {
-        setWsState("connected");
-      };
-
-      ws.onclose = () => {
-        setWsState("disconnected");
-      };
-
-      ws.onerror = () => {
-        setWsState("disconnected");
-      };
+      ws.onopen = () => setWsState("connected");
+      ws.onclose = () => setWsState("disconnected");
+      ws.onerror = () => setWsState("disconnected");
 
       ws.onmessage = (event) => {
         try {
           const data = JSON.parse(event.data);
           if (data.event === "TABLE_STATUS_CHANGED") {
             const payload = data.payload as { table_id: number; status: string };
-            setTables(prev =>
-              prev.map(table =>
-                table.id === payload.table_id
-                  ? { ...table, status: payload.status }
-                  : table
+            setTables((prev) =>
+              prev.map((table) =>
+                table.id === payload.table_id ? { ...table, status: payload.status } : table
               )
             );
-            fetchData(); // reload progress bars
+            fetchData();
           } else if (data.event === "PAYMENT_REQUESTED") {
             const payload = data.payload as { session_id: number; table_id: number };
             addToast(`Bàn ${payload.table_id} vừa yêu cầu Thanh toán!`, "warning");
             fetchData();
           } else if (data.event === "CANCEL_REQUEST_PENDING") {
-            const payload = data.payload as { order_detail_id: number; reason: string };
-            addToast(`Món #${payload.order_detail_id} yêu cầu huỷ: "${payload.reason}"`, "warning");
+            const payload = data.payload as { order_detail_id: number; item_name?: string; table_number?: number; requested_by_name?: string; reason: string };
+            const displayName = payload.item_name ? `Món "${payload.item_name}" (Bàn ${payload.table_number})` : `Món #${payload.order_detail_id}`;
+            addToast(`${displayName} yêu cầu huỷ: "${payload.reason}"`, "warning");
+            
+            if (user?.role === "manager" || user?.role === "admin") {
+              setPendingCancelRequests((prev) => [
+                ...prev.filter((r) => r.order_detail_id !== payload.order_detail_id),
+                payload,
+              ]);
+            }
             fetchData();
           } else if (data.event === "NEW_ORDER") {
             addToast(`Nhận đơn hàng mới từ bàn ${data.payload.table_id}!`, "info");
@@ -180,30 +240,23 @@ export default function Dashboard() {
       clearInterval(interval);
       ws?.close();
     };
-  }, []);
+  }, [user]);
 
-  // Fetch Table & Active Progress Invoice Data
+  /* ---- Data fetching ---- */
   const fetchData = async () => {
     try {
-      const [tRes, oRes] = await Promise.all([
-        api.get("/tables"),
-        api.get("/orders/pending"),
-      ]);
+      const [tRes, oRes] = await Promise.all([api.get("/tables"), api.get("/orders/pending")]);
       const fetchedTables = tRes.data.data as Table[];
       setTables(fetchedTables);
       setPendingOrders(oRes.data.data);
 
-      // Load progress invoice details for occupied/waiting tables
-      fetchedTables.forEach(t => {
+      fetchedTables.forEach((t) => {
         if (t.status === "occupied" || t.status === "waiting_payment") {
           loadTableProgress(t.id, t.table_number);
         }
       });
     } catch (err: any) {
-      const status = err?.response?.status;
-      if (status === 401) {
-        setAuthError(true);
-      }
+      if (err?.response?.status === 401) setAuthError(true);
       console.error(err);
     }
   };
@@ -215,10 +268,7 @@ export default function Dashboard() {
       const map = Object.fromEntries(items.map((item) => [item.id, item.name]));
       setMenuItemMap(map);
     } catch (err: any) {
-      const status = err?.response?.status;
-      if (status === 401) {
-        setAuthError(true);
-      }
+      if (err?.response?.status === 401) setAuthError(true);
       console.error(err);
     }
   };
@@ -228,38 +278,40 @@ export default function Dashboard() {
       const sessionRes = await api.get(`/tables/${tableNumber}/session`);
       if (sessionRes.data.data && sessionRes.data.data.session_id) {
         const sessionId = sessionRes.data.data.session_id;
-        const invRes = await api.get('/invoice', {
-          headers: { 'X-Session-ID': String(sessionId) }
-        });
-        setTableActiveInvoices(prev => ({
-          ...prev,
-          [tableId]: invRes.data.data
-        }));
+        const invRes = await api.get("/invoice", { headers: { "X-Session-ID": String(sessionId) } });
+        const invoiceData = invRes.data.data;
+        setTableActiveInvoices((prev) => ({ ...prev, [tableId]: invoiceData }));
+
+        // Đối chiếu để tự động xoá các yêu cầu huỷ đã được xử lý trên máy khác
+        if (invoiceData && invoiceData.details) {
+          const details: any[] = invoiceData.details;
+          setPendingCancelRequests((prev) => {
+            return prev.filter((req) => {
+              const matched = details.find((d) => d.id === req.order_detail_id);
+              if (!matched || matched.cooking_status !== "cooking") {
+                return false;
+              }
+              return true;
+            });
+          });
+        }
       }
     } catch {}
   };
 
+  /* ---- Order actions ---- */
   const confirmOrder = async (orderId: number) => {
-    const order = pendingOrders.find(o => o.id === orderId);
+    const order = pendingOrders.find((o) => o.id === orderId);
     if (!order) return;
-
     try {
       if (order.order_details.length === 0) {
         await rejectOrder(orderId);
         return;
       }
-
-      // 1. Send the updated items to backend first
       const payload = {
-        items: order.order_details.map(d => ({
-          item_id: d.item_id,
-          quantity: d.quantity,
-          note: d.note || ""
-        }))
+        items: order.order_details.map((d) => ({ item_id: d.item_id, quantity: d.quantity, note: d.note || "" })),
       };
       await api.patch(`/orders/${orderId}/update-details`, payload);
-
-      // 2. Confirm order
       await api.patch(`/orders/${orderId}/confirm`);
       addToast(`Đã duyệt thành công đơn hàng #${orderId}`, "success");
       fetchData();
@@ -269,42 +321,30 @@ export default function Dashboard() {
   };
 
   const handleUpdatePendingItemQty = (orderId: number, itemId: number, newQty: number) => {
-    setPendingOrders(prev => prev.map(order => {
-      if (order.id !== orderId) return order;
-
-      const updatedDetails = order.order_details.map(d => {
-        if (d.item_id !== itemId) return d;
-        return { ...d, quantity: newQty };
-      }).filter(d => d.quantity > 0);
-
-      // Re-calculate pricing fields locally
-      const subtotal = updatedDetails.reduce((sum, d) => sum + Number(d.unit_price) * d.quantity, 0);
-      const vatRatio = order.subtotal > 0 ? (Number(order.tax_amount) / Number(order.subtotal)) : 0.08;
-      const svcRatio = order.subtotal > 0 ? (Number(order.service_charge) / Number(order.subtotal)) : 0.05;
-
-      const tax_amount = subtotal * vatRatio;
-      const service_charge = subtotal * svcRatio;
-      const total_price = subtotal + tax_amount + service_charge;
-
-      return {
-        ...order,
-        subtotal,
-        tax_amount,
-        service_charge,
-        total_price,
-        order_details: updatedDetails
-      };
-    }));
+    setPendingOrders((prev) =>
+      prev.map((order) => {
+        if (order.id !== orderId) return order;
+        const updatedDetails = order.order_details
+          .map((d) => (d.item_id !== itemId ? d : { ...d, quantity: newQty }))
+          .filter((d) => d.quantity > 0);
+        const subtotal = updatedDetails.reduce((sum, d) => sum + Number(d.unit_price) * d.quantity, 0);
+        const vatRatio = order.subtotal > 0 ? Number(order.tax_amount) / Number(order.subtotal) : 0.08;
+        const svcRatio = order.subtotal > 0 ? Number(order.service_charge) / Number(order.subtotal) : 0.05;
+        const tax_amount = subtotal * vatRatio;
+        const service_charge = subtotal * svcRatio;
+        const total_price = subtotal + tax_amount + service_charge;
+        return { ...order, subtotal, tax_amount, service_charge, total_price, order_details: updatedDetails };
+      })
+    );
   };
 
   const handleUpdatePendingItemNote = (orderId: number, itemId: number, note: string) => {
-    setPendingOrders(prev => prev.map(order => {
-      if (order.id !== orderId) return order;
-      return {
-        ...order,
-        order_details: order.order_details.map(d => d.item_id === itemId ? { ...d, note } : d)
-      };
-    }));
+    setPendingOrders((prev) =>
+      prev.map((order) => {
+        if (order.id !== orderId) return order;
+        return { ...order, order_details: order.order_details.map((d) => (d.item_id === itemId ? { ...d, note } : d)) };
+      })
+    );
   };
 
   const handleDeletePendingItem = (orderId: number, itemId: number) => {
@@ -318,12 +358,11 @@ export default function Dashboard() {
       await api.patch(`/orders/${orderId}/reject`);
       addToast(`Đã từ chối đơn hàng #${orderId}`, "error");
       fetchData();
-    } catch (err: any) {
+    } catch {
       alert("Lỗi từ chối order");
     }
   };
 
-  // Serve & Cancel item actions inside details panel
   const handleMarkServed = async (detailId: number, tableId: number, tableNumber: number) => {
     try {
       await api.patch(`/order-details/${detailId}/served`);
@@ -338,11 +377,7 @@ export default function Dashboard() {
   const handleCancelDetail = async (detailId: number, status: string, tableId: number, tableNumber: number) => {
     const reason = prompt("Nhập lý do huỷ món:");
     if (reason === null) return;
-    if (!reason.trim()) {
-      alert("Lý do huỷ không được trống.");
-      return;
-    }
-
+    if (!reason.trim()) { alert("Lý do huỷ không được trống."); return; }
     try {
       if (status === "cooking") {
         await api.post(`/order-details/${detailId}/cancel-request`, { cancel_reason: reason });
@@ -358,7 +393,6 @@ export default function Dashboard() {
     }
   };
 
-  // Create new session & order placement for tables
   const handleOpenTable = async (table: Table) => {
     try {
       await api.get(`/tables/${table.table_number}/session`);
@@ -368,7 +402,7 @@ export default function Dashboard() {
     } catch {
       alert("Không thể mở bàn");
     }
-  };// Payment request function removed as requested (only customer triggers payment request)
+  };
 
   const handleTransferTable = async (sessionId: number, destTableId: number, destTableNumber: number) => {
     if (!confirm(`Bạn có chắc muốn chuyển đơn sang Bàn ${destTableNumber}?`)) return;
@@ -383,136 +417,247 @@ export default function Dashboard() {
     }
   };
 
-  // Group tables by Floor
-  const floors = useMemo(() => {
-    const list = ["All"];
-    tables.forEach(t => {
-      if (t.floor && !list.includes(t.floor)) {
-        list.push(t.floor);
+  const handleMergeSessions = async (sourceSessionId: number, targetSessionId: number, targetTableNumber: number) => {
+    if (!confirm(`Bạn có chắc muốn gộp hoá đơn bàn này vào Bàn ${targetTableNumber}?`)) return;
+    try {
+      await api.post("/sessions/merge", {
+        source_session_id: sourceSessionId,
+        master_session_id: targetSessionId
+      });
+      addToast(`Đã gộp bàn thành công vào Bàn ${targetTableNumber}!`, "success");
+      setIsMerging(false);
+      setSelectedTable(null);
+      fetchData();
+    } catch (err: any) {
+      alert(err.response?.data?.detail?.message || err.response?.data?.detail || "Lỗi gộp bàn");
+    }
+  };
+
+  const handleApproveCancel = async (detailId: number, approved: boolean, reason?: string) => {
+    try {
+      if (approved) {
+        await api.patch(`/order-details/${detailId}/approve-cancel`, { approved: true, reason });
+        addToast(`Đã phê duyệt huỷ món #${detailId}!`, "success");
+      } else {
+        await api.patch(`/order-details/${detailId}/approve-cancel`, { approved: false });
+        addToast(`Đã từ chối huỷ món #${detailId}.`, "info");
       }
-    });
-    return list;
-  }, [tables]);
+      setPendingCancelRequests(prev => prev.filter(r => r.order_detail_id !== detailId));
+      fetchData();
+      if (selectedTable) {
+        await loadTableProgress(selectedTable.id, selectedTable.table_number);
+      }
+    } catch (err: any) {
+      alert(err.response?.data?.detail?.message || err.response?.data?.detail || "Lỗi xử lý duyệt huỷ");
+      setPendingCancelRequests(prev => prev.filter(r => r.order_detail_id !== detailId));
+    }
+  };
 
+  /* ---- Computed data ---- */
   const filteredTables = useMemo(() => {
-    return tables.filter(t => floorFilter === "All" || t.floor === floorFilter);
-  }, [tables, floorFilter]);
+    return tables.filter((t) => {
+      if (capacityFilter !== "all" && getTableCapacity(t.table_number) !== capacityFilter) return false;
+      if (searchQuery) {
+        const q = searchQuery.toLowerCase();
+        const num = String(t.table_number);
+        if (!num.includes(q) && !`bàn ${num}`.includes(q)) return false;
+      }
+      return true;
+    });
+  }, [tables, capacityFilter, searchQuery]);
 
-  // Table statistics helper (Served / Total)
+  const tableStats = useMemo(() => {
+    const empty = filteredTables.filter((t) => t.status === "empty").length;
+    const occupied = filteredTables.filter((t) => t.status !== "empty").length;
+    return { empty, occupied };
+  }, [filteredTables]);
+
   const getTableServedStats = (tableId: number) => {
     const invoiceData = tableActiveInvoices[tableId];
-    if (!invoiceData || !invoiceData.details || invoiceData.details.length === 0) {
-      return null;
-    }
+    if (!invoiceData || !invoiceData.details || invoiceData.details.length === 0) return null;
     const details = invoiceData.details as OrderDetail[];
-    const activeDetails = details.filter(d => d.cooking_status !== "cancelled");
-    const servedDetails = activeDetails.filter(d => d.cooking_status === "served");
+    const activeDetails = details.filter((d) => d.cooking_status !== "cancelled");
+    const servedDetails = activeDetails.filter((d) => d.cooking_status === "served");
     return {
       served: servedDetails.reduce((sum, d) => sum + d.quantity, 0),
-      total: activeDetails.reduce((sum, d) => sum + d.quantity, 0)
+      total: activeDetails.reduce((sum, d) => sum + d.quantity, 0),
     };
   };
 
+  /* Format clock */
+  const timeStr = currentTime.toLocaleTimeString("vi-VN", { hour: "2-digit", minute: "2-digit", hour12: true }).toUpperCase();
+  const dateStr = currentTime.toLocaleDateString("vi-VN", { day: "2-digit", month: "2-digit", year: "numeric" });
+
+  /* ---- Loading state ---- */
   if (tables.length === 0) {
     return (
-      <div
-        style={{
-          display: "flex",
-          justifyContent: "center",
-          alignItems: "center",
-          height: "100vh",
-          background: "var(--bg-primary)"
-        }}
-      >
+      <div style={{ display: "flex", justifyContent: "center", alignItems: "center", height: "100vh", background: "var(--bg-primary)" }}>
         <div style={{ textAlign: "center" }}>
           <Loader2 className="animate-spin" size={40} style={{ color: "var(--accent-primary)", margin: "0 auto" }} />
-          <p style={{ marginTop: "12px", color: "var(--text-secondary)", fontWeight: 500 }}>Đang tải sơ đồ POS...</p>
+          <p style={{ marginTop: "12px", color: "var(--text-secondary)", fontWeight: 500 }}>Đang tải sơ đồ bàn...</p>
         </div>
       </div>
     );
   }
 
+  /* ================================================================
+     RENDER
+     ================================================================ */
   return (
     <div className="dashboard-layout animate-fade-in">
-      
-      {/* ===== SIDEBAR NAV ===== */}
-      <aside className="sidebar glass">
-        <div style={{ paddingBottom: "12px", borderBottom: "1px solid var(--glass-border)" }}>
-          <h2 style={{ color: "var(--accent-primary)", display: "flex", alignItems: "center", gap: "8px", fontSize: "1.4rem", fontWeight: 700 }}>
-            <Sparkles size={20} /> Smart OS
-          </h2>
-          <p style={{ fontSize: "0.8rem", color: "var(--text-secondary)", marginTop: "4px" }}>
-            Staff Portal • {user?.sub}
-          </p>
+
+      {/* ===== SIDEBAR ===== */}
+      <aside className="sidebar">
+        {/* Logo */}
+        <div className="sidebar-logo">
+          <div className="sidebar-logo-icon">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <path d="M3 11L12 2L21 11" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+              <path d="M5 9.5V19C5 19.5523 5.44772 20 6 20H18C18.5523 20 19 19.5523 19 19V9.5" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+              <rect x="9" y="14" width="6" height="6" rx="1" stroke="white" strokeWidth="1.5"/>
+            </svg>
+          </div>
+          <div className="sidebar-logo-text">
+            <h2>Smart<br/>Restaurant</h2>
+            <span>Staff Web</span>
+          </div>
         </div>
 
-        <nav style={{ display: "flex", flexDirection: "column", gap: "8px", flex: 1, marginTop: "12px" }}>
+        {/* Navigation */}
+        <nav className="sidebar-nav">
           <button
-            className={`btn ${activeTab === "tables" ? "btn-primary" : "btn-secondary"}`}
-            style={{ justifyContent: "flex-start" }}
+            className={`sidebar-nav-item ${activeTab === "tables" ? "active" : ""}`}
             onClick={() => setActiveTab("tables")}
           >
-            <LayoutDashboard size={18} /> Sơ đồ Bàn
+            <LayoutGrid size={18} /> Sơ đồ bàn
           </button>
-          
+
           <button
-            className={`btn ${activeTab === "orders" ? "btn-primary" : "btn-secondary"}`}
-            style={{ justifyContent: "flex-start", position: "relative" }}
+            className={`sidebar-nav-item ${activeTab === "orders" ? "active" : ""}`}
             onClick={() => setActiveTab("orders")}
           >
-            <CheckSquare size={18} /> Đơn chờ duyệt
+            <ClipboardList size={18} /> Đơn chờ duyệt
             {pendingOrders.length > 0 && (
-              <span style={{
-                position: "absolute", right: "12px",
-                background: "var(--accent-danger)", color: "white",
-                borderRadius: "var(--border-radius-pill)", padding: "2px 8px",
-                fontSize: "0.75rem", fontWeight: "bold"
-              }}>
-                {pendingOrders.length}
-              </span>
+              <span className="nav-badge">{pendingOrders.length}</span>
             )}
           </button>
+
+          <button
+            className={`sidebar-nav-item ${activeTab === "details" ? "active" : ""}`}
+            onClick={() => setActiveTab("details")}
+          >
+            <Info size={18} /> Thông tin chi tiết<br/>các bàn
+          </button>
+
+          {(user?.role === "manager" || user?.role === "admin") && (
+            <button
+              className={`sidebar-nav-item ${activeTab === "cancellations" ? "active" : ""}`}
+              onClick={() => setActiveTab("cancellations")}
+            >
+              <Trash2 size={18} /> Yêu cầu huỷ món
+              {pendingCancelRequests.length > 0 && (
+                <span className="nav-badge" style={{ background: "var(--accent-danger)" }}>{pendingCancelRequests.length}</span>
+              )}
+            </button>
+          )}
         </nav>
 
-        <button
-          className="btn btn-danger"
-          style={{ justifyContent: "flex-start" }}
-          onClick={handleLogout}
-        >
-          <LogOut size={18} /> Đăng xuất
-        </button>
+        {/* User profile */}
+        <div className="sidebar-user-container" ref={userDropdownRef}>
+          <div
+            className="sidebar-user"
+            onClick={() => setShowUserDropdown(!showUserDropdown)}
+            title="Đăng xuất"
+          >
+            <div className="sidebar-user-avatar">
+              {user?.display_name?.charAt(0).toUpperCase() || user?.sub?.charAt(0).toUpperCase() || "S"}
+            </div>
+            <div className="sidebar-user-info">
+              <div className="name">{user?.display_name || user?.sub || "Staff"}</div>
+              <div className="role">Nhân viên phục vụ</div>
+            </div>
+            <ChevronDown
+              size={16}
+              style={{
+                color: "var(--sidebar-text)",
+                flexShrink: 0,
+                transform: showUserDropdown ? "rotate(180deg)" : "none",
+                transition: "transform 0.2s",
+              }}
+            />
+          </div>
+
+          {showUserDropdown && (
+            <div className="sidebar-user-dropdown animate-fade-in">
+              <button className="dropdown-item" onClick={handleLogout}>
+                <LogOut size={14} /> Đăng xuất
+              </button>
+            </div>
+          )}
+        </div>
       </aside>
 
-      {/* ===== MAIN DASHBOARD CONTENT ===== */}
+      {/* ===== MAIN CONTENT ===== */}
       <main className="main-content">
-        
-        {/* Header bar */}
+
+        {/* Header */}
         <header className="main-header">
-          <div>
-            <h1 style={{ fontSize: "1.65rem", fontWeight: 700 }}>
-              {activeTab === "tables" ? "Bảng sơ đồ phục vụ" : "Đơn hàng đang chờ xử lý"}
-            </h1>
-            <p style={{ color: "var(--text-secondary)", fontSize: "0.85rem" }}>
-              Xin chào, {user?.role.toUpperCase()}
+          <div className="main-header-left">
+            <h1>{activeTab === "tables" ? "Sơ đồ bàn" : activeTab === "orders" ? "Đơn chờ duyệt" : activeTab === "cancellations" ? "Yêu cầu huỷ món" : "Thông tin chi tiết các bàn"}</h1>
+            <p>
+              {activeTab === "tables"
+                ? "Quản lý và theo dõi trạng thái các bàn trong nhà hàng"
+                : activeTab === "orders"
+                ? "Duyệt hoặc từ chối đơn hàng đang chờ xử lý"
+                : activeTab === "cancellations"
+                ? "Manager phê duyệt hoặc từ chối yêu cầu huỷ món đang nấu"
+                : "Xem thông tin chi tiết hoạt động của từng bàn"}
             </p>
           </div>
 
-          {/* WebSocket real-time connection state indicator */}
-          <div className="glass" style={{ display: "flex", alignItems: "center", gap: "10px", padding: "6px 16px", borderRadius: "var(--border-radius-pill)" }}>
-            <span 
-              className="pulse-indicator" 
-              style={{ 
-                color: wsState === "connected" ? "var(--accent-secondary)" : wsState === "connecting" ? "var(--accent-warning)" : "var(--accent-danger)"
-              }} 
-            />
-            <span style={{ fontSize: "0.8rem", fontWeight: 600, color: "var(--text-secondary)" }}>
-              {wsState === "connected" ? "POS Online" : wsState === "connecting" ? "Đồng bộ..." : "Ngoại tuyến"}
-            </span>
+          <div className="main-header-right">
+            {/* Online status */}
+            <div className={`header-status ${wsState === "connected" ? "" : wsState === "connecting" ? "connecting" : "disconnected"}`}>
+              <div className="status-wifi-circle">
+                <Wifi size={16} />
+              </div>
+              <div className="status-text">
+                <div className="status-title">
+                  {wsState === "connected" ? "Online" : wsState === "connecting" ? "Đang kết nối" : "Ngoại tuyến"}
+                </div>
+                <div className="status-desc">
+                  {wsState === "connected" ? "Kết nối tốt" : wsState === "connecting" ? "Đang thử..." : "Mất kết nối"}
+                </div>
+              </div>
+            </div>
+
+            {/* Notification bell */}
+            <div className="header-notification" onClick={() => {
+              if ((user?.role === "manager" || user?.role === "admin") && pendingCancelRequests.length > 0) {
+                setActiveTab("cancellations");
+              } else {
+                setActiveTab("orders");
+              }
+            }}>
+              <Bell size={18} />
+              {(pendingOrders.length + ((user?.role === "manager" || user?.role === "admin") ? pendingCancelRequests.length : 0)) > 0 && (
+                <span className="notif-badge">
+                  {pendingOrders.length + ((user?.role === "manager" || user?.role === "admin") ? pendingCancelRequests.length : 0)}
+                </span>
+              )}
+            </div>
+
+            {/* Clock */}
+            <div className="header-clock">
+              <div className="time">{timeStr}</div>
+              <div className="date">{dateStr}</div>
+            </div>
           </div>
         </header>
 
+        {/* Auth error banner */}
         {authError && (
-          <div className="glass animate-fade-in" style={{ padding: "16px 20px", borderRadius: "var(--border-radius-md)", marginBottom: "24px", borderLeft: "4px solid var(--accent-danger)", background: "rgba(255, 71, 87, 0.05)" }}>
+          <div className="glass animate-fade-in" style={{ padding: "16px 20px", borderRadius: "var(--border-radius-md)", marginBottom: "20px", borderLeft: "4px solid var(--accent-danger)", background: "rgba(255, 71, 87, 0.05)" }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
               <div>
                 <strong style={{ color: "var(--accent-danger)" }}>Phiên đăng nhập đã hết hạn!</strong>
@@ -523,83 +668,127 @@ export default function Dashboard() {
           </div>
         )}
 
-        {/* Tab 1: TABLES MAP GRID */}
+        {/* ========== TAB: TABLES ========== */}
         {activeTab === "tables" && (
           <div className="animate-fade-in">
-            {/* Floor selection filters */}
-            <div className="floor-filter-tabs">
-              {floors.map(floor => (
-                <button
-                  key={floor}
-                  className={`floor-tab ${floorFilter === floor ? "active" : ""}`}
-                  onClick={() => setFloorFilter(floor)}
-                >
-                  {floor === "All" ? "Tất cả các khu" : `Khu vực: ${floor}`}
-                </button>
-              ))}
+            {/* Filter bar */}
+            <div className="filter-bar">
+              <button className={`filter-btn ${capacityFilter === "all" ? "active" : ""}`} onClick={() => setCapacityFilter("all")}>
+                Tất cả bàn
+              </button>
+              <button className={`filter-btn ${capacityFilter === 2 ? "active" : ""}`} onClick={() => setCapacityFilter(2)}>
+                <Users size={14} /> Bàn 2 người
+              </button>
+              <button className={`filter-btn ${capacityFilter === 5 ? "active" : ""}`} onClick={() => setCapacityFilter(5)}>
+                <Users size={14} /> Bàn 5 người
+              </button>
+              <button className={`filter-btn ${capacityFilter === 8 ? "active" : ""}`} onClick={() => setCapacityFilter(8)}>
+                <Users size={14} /> Bàn 8 người
+              </button>
+
+              {/* Search */}
+              <div className="filter-search">
+                <Search size={15} style={{ color: "var(--text-tertiary)", flexShrink: 0 }} />
+                <input
+                  type="text"
+                  placeholder="Tìm kiếm số bàn..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                />
+              </div>
+
+              <button className="filter-icon-btn">
+                <SlidersHorizontal size={16} />
+              </button>
             </div>
 
-            {/* Grid of Table Cards */}
+            {/* Floor header + Legend */}
+            <div className="floor-header">
+              <div className="floor-title">
+                <LayoutGrid size={18} />
+                Tầng 1
+              </div>
+              <div className="floor-legend">
+                <div className="legend-item">
+                  <span className="legend-dot empty" />
+                  Trống
+                  <span className="legend-count">{tableStats.empty}</span>
+                </div>
+                <div className="legend-item">
+                  <span className="legend-dot occupied" />
+                  Có khách
+                  <span className="legend-count">{tableStats.occupied}</span>
+                </div>
+              </div>
+            </div>
+
+            {/* Table Grid */}
             <div className="table-grid">
-              {filteredTables.map(table => {
+              {filteredTables.map((table) => {
                 const stats = getTableServedStats(table.id);
                 const capacity = getTableCapacity(table.table_number);
-                
+                const isOccupied = table.status !== "empty";
+
                 return (
                   <div
                     key={table.id}
                     className={`table-card ${table.status}`}
-                    onClick={() => {
-                      setSelectedTable(table);
-                    }}
+                    onClick={() => setSelectedTable(table)}
                   >
-                    <div className="table-card-header">
-                      <span className="table-capacity-badge">
-                        <User size={10} /> Bàn {capacity} người
-                      </span>
-                      <span className={`table-status-pill ${table.status}`}>
-                        {table.status === "empty" ? "Trống" : table.status === "occupied" ? "Có khách" : "Chờ TT"}
-                      </span>
+                    {/* Icon */}
+                    <div className="table-icon">
+                      <TableSvgIcon size={28} />
                     </div>
 
-                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-end" }}>
-                      <div className="table-card-number">{table.table_number}</div>
-                      {table.floor && (
-                        <span style={{ fontSize: "0.75rem", color: "var(--text-secondary)", fontWeight: 500 }}>
-                          Khu {table.floor}
-                        </span>
-                      )}
+                    {/* Number */}
+                    <div className="table-card-number">{padNumber(table.table_number)}</div>
+
+                    {/* Capacity */}
+                    <div className="table-capacity">
+                      <Users size={13} /> {capacity} người
                     </div>
 
-                    {/* Progress tracking indicator of served items */}
-                    {stats ? (
+                    {/* Progress bar (occupied only) */}
+                    {isOccupied && stats && (
                       <div className="table-progress-container">
-                        <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.7rem", color: "var(--text-secondary)", fontWeight: 600 }}>
-                          <span>Tiến độ món</span>
+                        <div className="table-progress-label">
+                          <span>Tiến độ lên món</span>
                           <span>{stats.served}/{stats.total}</span>
                         </div>
                         <div className="table-progress-bar-bg">
                           <div
                             className="table-progress-bar-fill"
-                            style={{ width: `${(stats.served / stats.total) * 100}%` }}
+                            style={{ width: `${stats.total > 0 ? (stats.served / stats.total) * 100 : 0}%` }}
                           />
                         </div>
                       </div>
-                    ) : (
-                      table.status !== "empty" && (
-                        <div style={{ fontSize: "0.75rem", color: "var(--text-secondary)", display: "flex", alignItems: "center", gap: "4px" }}>
-                          <Clock size={12} /> Chưa đặt món
-                        </div>
-                      )
                     )}
+
+                    {isOccupied && !stats && (
+                      <div style={{ fontSize: "0.75rem", color: "var(--text-secondary)", display: "flex", alignItems: "center", gap: "4px" }}>
+                        <Clock size={12} /> Chưa đặt món
+                      </div>
+                    )}
+
+                    {/* Status */}
+                    <div className={`table-status ${table.status}`}>
+                      <span className="table-status-dot" />
+                      {table.status === "empty" ? "Trống" : table.status === "occupied" ? "Có khách" : "Chờ thanh toán"}
+                    </div>
                   </div>
                 );
               })}
             </div>
+
+            {/* Footer */}
+            <div className="dashboard-footer">
+              <span className="footer-dot" />
+              Dữ liệu được cập nhật theo thời gian thực
+            </div>
           </div>
         )}
 
-        {/* Tab 2: PENDING ORDERS TABLE LIST */}
+        {/* ========== TAB: ORDERS ========== */}
         {activeTab === "orders" && (
           <div className="animate-fade-in" style={{ maxWidth: "800px" }}>
             {pendingOrders.length === 0 ? (
@@ -612,20 +801,17 @@ export default function Dashboard() {
               </div>
             ) : (
               <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
-                {pendingOrders.map(order => {
-                  const tableNum = tables.find(t => t.id === order.table_id)?.table_number || "?";
+                {pendingOrders.map((order) => {
+                  const tableNum = tables.find((t) => t.id === order.table_id)?.table_number || "?";
                   return (
                     <div key={order.id} className="glass animate-fade-in" style={{ padding: "20px", borderRadius: "var(--border-radius-lg)", borderLeft: "4px solid var(--accent-primary)" }}>
                       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", paddingBottom: "12px", borderBottom: "1px dashed var(--glass-border)", marginBottom: "16px" }}>
                         <div>
-                          <h3 style={{ fontSize: "1.1rem", fontWeight: 700, margin: 0 }}>
-                            Đơn hàng #{order.id} • Bàn {tableNum}
-                          </h3>
+                          <h3 style={{ fontSize: "1.1rem", fontWeight: 700, margin: 0 }}>Đơn hàng #{order.id} • Bàn {tableNum}</h3>
                           <span style={{ fontSize: "0.95rem", color: "var(--accent-primary)", fontWeight: 700, display: "block", marginTop: "4px" }}>
                             Tạm tính: {order.total_price.toLocaleString()}đ
                           </span>
                         </div>
-
                         <div style={{ display: "flex", gap: "8px" }}>
                           <button className="btn btn-danger" style={{ padding: "8px 16px", borderRadius: "var(--border-radius-pill)", fontSize: "0.85rem" }} onClick={() => rejectOrder(order.id)}>
                             <X size={16} /> Từ chối
@@ -638,7 +824,7 @@ export default function Dashboard() {
 
                       <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
                         <h4 style={{ fontSize: "0.85rem", color: "var(--text-secondary)", fontWeight: 600, margin: 0 }}>Chi tiết món ăn đặt bếp:</h4>
-                        {order.order_details?.map(detail => (
+                        {order.order_details?.map((detail) => (
                           <div key={detail.id} style={{ display: "flex", flexDirection: "column", gap: "6px", padding: "12px", background: "var(--bg-primary)", borderRadius: "var(--border-radius-md)", border: "1px solid var(--glass-border)" }}>
                             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                               <div style={{ display: "flex", gap: "10px", alignItems: "center" }}>
@@ -649,9 +835,7 @@ export default function Dashboard() {
                                   ({Number(detail.unit_price).toLocaleString()}đ)
                                 </span>
                               </div>
-
                               <div style={{ display: "flex", alignItems: "center" }}>
-                                {/* Quantity Stepper */}
                                 <div className="stepper" style={{ marginRight: "12px", padding: "2px 6px" }}>
                                   <button className="stepper-btn" style={{ width: "22px", height: "22px" }} onClick={() => handleUpdatePendingItemQty(order.id, detail.item_id, detail.quantity - 1)}>
                                     <Minus size={10} />
@@ -661,8 +845,6 @@ export default function Dashboard() {
                                     <Plus size={10} />
                                   </button>
                                 </div>
-
-                                {/* Delete button */}
                                 <button
                                   className="btn-icon"
                                   style={{ width: "26px", height: "26px", background: "rgba(255, 71, 87, 0.1)", border: "none", color: "var(--accent-danger)" }}
@@ -672,8 +854,6 @@ export default function Dashboard() {
                                 </button>
                               </div>
                             </div>
-
-                            {/* Note Editor */}
                             <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
                               <span style={{ fontSize: "0.75rem", color: "var(--text-secondary)", whiteSpace: "nowrap" }}>💡 Ghi chú:</span>
                               <input
@@ -681,21 +861,11 @@ export default function Dashboard() {
                                 placeholder="Ghi chú nhanh (Không hành, thêm cay...)"
                                 value={detail.note || ""}
                                 onChange={(e) => handleUpdatePendingItemNote(order.id, detail.item_id, e.target.value)}
-                                style={{
-                                  padding: "4px 8px",
-                                  fontSize: "0.78rem",
-                                  borderRadius: "4px",
-                                  background: "var(--bg-secondary)",
-                                  boxShadow: "none",
-                                  border: "1px solid var(--glass-border)",
-                                  height: "26px",
-                                  flex: 1
-                                }}
+                                style={{ padding: "4px 8px", fontSize: "0.78rem", borderRadius: "4px", background: "var(--bg-secondary)", boxShadow: "none", border: "1px solid var(--glass-border)", height: "26px", flex: 1 }}
                               />
                             </div>
                           </div>
                         ))}
-
                       </div>
                     </div>
                   );
@@ -704,132 +874,223 @@ export default function Dashboard() {
             )}
           </div>
         )}
+
+        {/* ========== TAB: DETAILS ========== */}
+        {activeTab === "details" && (
+          <div className="animate-fade-in" style={{ maxWidth: "900px" }}>
+            <div className="glass" style={{ padding: "40px 20px", textAlign: "center", borderRadius: "var(--border-radius-lg)" }}>
+              <Info size={48} style={{ color: "var(--accent-primary)", opacity: 0.4, marginBottom: "16px" }} />
+              <h3 style={{ margin: 0, fontWeight: 600 }}>Thông tin chi tiết các bàn</h3>
+              <p style={{ color: "var(--text-secondary)", fontSize: "0.9rem", marginTop: "4px" }}>
+                Nhấn vào từng bàn ở Sơ đồ bàn để xem thông tin chi tiết.
+              </p>
+              <button className="btn btn-primary" style={{ marginTop: "20px" }} onClick={() => setActiveTab("tables")}>
+                Quay lại Sơ đồ bàn
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* ========== TAB: CANCELLATIONS ========== */}
+        {activeTab === "cancellations" && (
+          <div className="animate-fade-in" style={{ maxWidth: "800px" }}>
+            {pendingCancelRequests.length === 0 ? (
+              <div className="glass" style={{ padding: "60px 20px", textAlign: "center", borderRadius: "var(--border-radius-lg)" }}>
+                <Check size={48} style={{ color: "var(--accent-secondary)", opacity: 0.5, marginBottom: "16px" }} />
+                <h3 style={{ margin: 0, fontWeight: 600 }}>Không có yêu cầu huỷ món</h3>
+                <p style={{ color: "var(--text-secondary)", fontSize: "0.9rem", marginTop: "4px" }}>
+                  Hiện tại không có đề xuất huỷ món nào cần phê duyệt.
+                </p>
+              </div>
+            ) : (
+              <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
+                {pendingCancelRequests.map((req) => (
+                  <div key={req.order_detail_id} className="glass animate-fade-in" style={{ padding: "20px", borderRadius: "var(--border-radius-lg)", borderLeft: "4px solid var(--accent-danger)" }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", paddingBottom: "12px", borderBottom: "1px dashed var(--glass-border)", marginBottom: "16px" }}>
+                      <div>
+                        <h3 style={{ fontSize: "1.1rem", fontWeight: 700, margin: 0 }}>
+                          Bàn {req.table_number} • Món: {req.item_name || `Mã chi tiết #${req.order_detail_id}`}
+                        </h3>
+                        <span style={{ fontSize: "0.85rem", color: "var(--text-secondary)", display: "block", marginTop: "4px" }}>
+                          Yêu cầu bởi: {req.requested_by_name || "Nhân viên"}
+                        </span>
+                      </div>
+                      <div style={{ display: "flex", gap: "8px" }}>
+                        <button className="btn btn-secondary" style={{ padding: "8px 16px", borderRadius: "var(--border-radius-pill)", fontSize: "0.85rem" }} onClick={() => handleApproveCancel(req.order_detail_id, false)}>
+                          <X size={16} /> Từ chối
+                        </button>
+                        <button className="btn btn-danger" style={{ padding: "8px 16px", borderRadius: "var(--border-radius-pill)", fontSize: "0.85rem" }} onClick={() => handleApproveCancel(req.order_detail_id, true, req.reason)}>
+                          <Check size={16} /> Phê duyệt huỷ
+                        </button>
+                      </div>
+                    </div>
+                    <div style={{ padding: "12px", background: "rgba(255, 71, 87, 0.05)", borderRadius: "var(--border-radius-md)", border: "1px solid rgba(255, 71, 87, 0.1)" }}>
+                      <span style={{ fontSize: "0.85rem", color: "var(--accent-danger)", fontWeight: 600, display: "block", marginBottom: "4px" }}>Lý do yêu cầu hủy:</span>
+                      <p style={{ fontSize: "0.9rem", color: "var(--text-primary)", margin: 0, fontStyle: "italic" }}>
+                        "{req.reason}"
+                      </p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
       </main>
 
-      {/* ===== SLIDE-OVER TABLE ORDER PANEL ===== */}
+      {/* ===== SIDE PANEL ===== */}
       {selectedTable && (
         <>
-          {/* Backdrop blur overlay */}
           <div className="side-panel-backdrop" onClick={() => setSelectedTable(null)} />
-
           <div className="side-panel">
             <div className="side-panel-header">
               <div>
-                <h3 style={{ fontSize: "1.2rem", fontWeight: 700, margin: 0 }}>
-                  Bàn {selectedTable.table_number}
-                </h3>
+                <h3 style={{ fontSize: "1.2rem", fontWeight: 700, margin: 0 }}>Bàn {selectedTable.table_number}</h3>
                 <span style={{ fontSize: "0.78rem", color: "var(--text-secondary)", display: "block", marginTop: "2px" }}>
                   Khu vực {selectedTable.floor || "Mặt đất"} • Bàn {getTableCapacity(selectedTable.table_number)} người
                 </span>
               </div>
-              
               <button className="btn-icon" onClick={() => setSelectedTable(null)}>
                 <X size={20} />
               </button>
             </div>
 
             {selectedTable.status === "empty" ? (
-              /* EMPTY TABLE PANEL STATE */
               <div className="side-panel-content" style={{ justifyContent: "center", alignItems: "center", textAlign: "center" }}>
                 <Coffee size={64} style={{ color: "var(--accent-primary)", opacity: 0.4, marginBottom: "16px" }} />
                 <h3 style={{ margin: 0, fontWeight: 700 }}>Bàn đang trống</h3>
                 <p style={{ color: "var(--text-secondary)", fontSize: "0.88rem", marginTop: "4px", maxWidth: "260px" }}>
                   Bàn này hiện chưa có khách sử dụng. Hãy mở bàn để bắt đầu gọi món.
                 </p>
-                <button
-                  className="btn btn-primary"
-                  style={{ marginTop: "24px", width: "80%" }}
-                  onClick={() => handleOpenTable(selectedTable)}
-                >
+                <button className="btn btn-primary" style={{ marginTop: "24px", width: "80%" }} onClick={() => handleOpenTable(selectedTable)}>
                   Mở bàn phục vụ
                 </button>
               </div>
             ) : (
-              /* ACTIVE TABLE PANEL STATE */
               <div className="side-panel-content">
                 <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
-                  
-                  {/* Active Order Details list */}
                   <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                     <h4 style={{ margin: 0, fontSize: "0.95rem", fontWeight: 700 }}>Danh sách món ăn đã gọi</h4>
-                    
-                    {/* Quick switch table button */}
                     {tableActiveInvoices[selectedTable.id] && (
-                      <button
-                        className="btn btn-secondary"
-                        style={{ padding: "6px 12px", fontSize: "0.78rem", borderRadius: "var(--border-radius-pill)", display: "flex", alignItems: "center", gap: "4px" }}
-                        onClick={() => setIsTransferring(true)}
-                      >
-                        <ArrowLeftRight size={12} /> Đổi bàn
-                      </button>
+                      <div style={{ display: "flex", gap: "8px" }}>
+                        <button
+                          className="btn btn-secondary"
+                          style={{ padding: "6px 12px", fontSize: "0.78rem", borderRadius: "var(--border-radius-pill)", display: "flex", alignItems: "center", gap: "4px" }}
+                          onClick={() => setIsTransferring(true)}
+                        >
+                          <ArrowLeftRight size={12} /> Đổi bàn
+                        </button>
+                        {(user?.role === "manager" || user?.role === "admin") && (
+                          <button
+                            className="btn btn-secondary"
+                            style={{ padding: "6px 12px", fontSize: "0.78rem", borderRadius: "var(--border-radius-pill)", display: "flex", alignItems: "center", gap: "4px", background: "rgba(255, 87, 34, 0.1)", border: "1px solid var(--accent-primary)", color: "var(--accent-primary)" }}
+                            onClick={() => setIsMerging(true)}
+                          >
+                            <GitMerge size={12} /> Gộp bàn
+                          </button>
+                        )}
+                      </div>
                     )}
                   </div>
 
                   {tableActiveInvoices[selectedTable.id] && tableActiveInvoices[selectedTable.id].details && tableActiveInvoices[selectedTable.id].details.length > 0 ? (
                     <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
-                      {tableActiveInvoices[selectedTable.id].details.filter((d: any) => d.cooking_status !== "cancelled").map((detail: any) => (
-                        <div
-                          key={detail.id}
-                          style={{
-                            padding: "12px",
-                            background: "var(--bg-primary)",
-                            borderRadius: "var(--border-radius-md)",
-                            border: "1px solid var(--glass-border)",
-                            display: "flex",
-                            flexDirection: "column",
-                            gap: "8px"
-                          }}
-                        >
-                          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
-                            <div>
-                              <div style={{ fontWeight: 600, fontSize: "0.9rem", display: "flex", alignItems: "center", gap: "6px" }}>
-                                <span style={{ color: "var(--accent-primary)" }}>x{detail.quantity}</span>
-                                <span>{detail.item_name}</span>
+                      {tableActiveInvoices[selectedTable.id].details
+                        .filter((d: any) => d.cooking_status !== "cancelled")
+                        .map((detail: any) => (
+                          <div
+                            key={detail.id}
+                            style={{ padding: "12px", background: "var(--bg-primary)", borderRadius: "var(--border-radius-md)", border: "1px solid var(--glass-border)", display: "flex", flexDirection: "column", gap: "8px" }}
+                          >
+                            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
+                              <div>
+                                <div style={{ fontWeight: 600, fontSize: "0.9rem", display: "flex", alignItems: "center", gap: "6px" }}>
+                                  <span style={{ color: "var(--accent-primary)" }}>x{detail.quantity}</span>
+                                  <span>{detail.item_name}</span>
+                                </div>
+                                {detail.note && (
+                                  <span style={{ fontSize: "0.78rem", color: "var(--accent-warning)", fontStyle: "italic", display: "block", marginTop: "2px" }}>
+                                    Ghi chú: {detail.note}
+                                  </span>
+                                )}
+                                {(() => {
+                                  const cancelReq = pendingCancelRequests.find(r => r.order_detail_id === detail.id);
+                                  if (cancelReq) {
+                                    return (
+                                      <span style={{ fontSize: "0.78rem", color: "var(--accent-danger)", fontWeight: 500, display: "block", marginTop: "2px" }}>
+                                        Yêu cầu huỷ: "{cancelReq.reason}" {cancelReq.requested_by_name ? `bởi ${cancelReq.requested_by_name}` : ""}
+                                      </span>
+                                    );
+                                  }
+                                  return null;
+                                })()}
                               </div>
-                              {detail.note && (
-                                <span style={{ fontSize: "0.78rem", color: "var(--accent-warning)", fontStyle: "italic", display: "block", marginTop: "2px" }}>
-                                  Ghi chú: {detail.note}
+                              <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                                <span style={{
+                                  fontSize: "0.72rem", fontWeight: 700, padding: "3px 8px", borderRadius: "4px",
+                                  background: detail.cooking_status === "served" ? "rgba(32, 201, 151, 0.12)" : detail.cooking_status === "done" ? "rgba(32, 201, 151, 0.15)" : "rgba(255, 159, 67, 0.1)",
+                                  color: detail.cooking_status === "served" || detail.cooking_status === "done" ? "var(--accent-secondary)" : "var(--accent-primary)"
+                                }}>
+                                  {detail.cooking_status === "pending" ? "Chờ duyệt" : detail.cooking_status === "confirmed" ? "Đã nhận" : detail.cooking_status === "cooking" ? "Đang nấu" : detail.cooking_status === "done" ? "Chờ phục vụ" : "Phục vụ"}
                                 </span>
-                              )}
-                            </div>
-
-                            <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-                              <span style={{
-                                fontSize: "0.72rem",
-                                fontWeight: 700,
-                                padding: "3px 8px",
-                                borderRadius: "4px",
-                                background: detail.cooking_status === "served" ? "rgba(32, 201, 151, 0.12)" : detail.cooking_status === "done" ? "rgba(32, 201, 151, 0.15)" : "rgba(255, 159, 67, 0.1)",
-                                color: detail.cooking_status === "served" ? "var(--accent-secondary)" : detail.cooking_status === "done" ? "var(--accent-secondary)" : "var(--accent-primary)"
-                              }}>
-                                {detail.cooking_status === "pending" ? "Chờ duyệt" : detail.cooking_status === "confirmed" ? "Đã nhận" : detail.cooking_status === "cooking" ? "Đang nấu" : detail.cooking_status === "done" ? "Chờ phục vụ" : "Phục vụ"}
-                              </span>
-
-                              {/* Serve item click checkmark */}
-                              {detail.cooking_status === "done" && (
-                                <button
-                                  className="btn-icon"
-                                  style={{ width: "24px", height: "24px", background: "var(--accent-secondary)", border: "none", color: "white" }}
-                                  onClick={() => handleMarkServed(detail.id, selectedTable.id, selectedTable.table_number)}
-                                >
-                                  <Check size={14} />
-                                </button>
-                              )}
-
-                              {/* Cancel item actions */}
-                              {["pending", "confirmed", "cooking"].includes(detail.cooking_status) && (
-                                <button
-                                  className="btn-icon"
-                                  style={{ width: "24px", height: "24px", background: "rgba(255, 71, 87, 0.1)", border: "none", color: "var(--accent-danger)" }}
-                                  onClick={() => handleCancelDetail(detail.id, detail.cooking_status, selectedTable.id, selectedTable.table_number)}
-                                >
-                                  <X size={14} />
-                                </button>
-                              )}
+                                {detail.cooking_status === "done" && (
+                                  <button
+                                    className="btn-icon"
+                                    style={{ width: "24px", height: "24px", background: "var(--accent-secondary)", border: "none", color: "white" }}
+                                    onClick={() => handleMarkServed(detail.id, selectedTable.id, selectedTable.table_number)}
+                                  >
+                                    <Check size={14} />
+                                  </button>
+                                )}
+                                {(() => {
+                                  const cancelReq = pendingCancelRequests.find(r => r.order_detail_id === detail.id);
+                                  if (cancelReq) {
+                                    if (user?.role === "manager" || user?.role === "admin") {
+                                      return (
+                                        <div style={{ display: "flex", gap: "6px" }}>
+                                          <button
+                                            className="btn-icon"
+                                            title="Từ chối huỷ"
+                                            style={{ width: "24px", height: "24px", background: "var(--bg-secondary)", border: "1px solid var(--glass-border)", color: "var(--text-secondary)" }}
+                                            onClick={() => handleApproveCancel(detail.id, false)}
+                                          >
+                                            <X size={14} />
+                                          </button>
+                                          <button
+                                            className="btn-icon"
+                                            title="Duyệt huỷ"
+                                            style={{ width: "24px", height: "24px", background: "var(--accent-secondary)", border: "none", color: "white" }}
+                                            onClick={() => handleApproveCancel(detail.id, true, cancelReq.reason)}
+                                          >
+                                            <Check size={14} />
+                                          </button>
+                                        </div>
+                                      );
+                                    } else {
+                                      return (
+                                        <span style={{ fontSize: "0.7rem", color: "var(--accent-warning)", fontWeight: 600 }}>
+                                          Chờ QL duyệt
+                                        </span>
+                                      );
+                                    }
+                                  }
+                                  if (["pending", "confirmed", "cooking"].includes(detail.cooking_status)) {
+                                    return (
+                                      <button
+                                        className="btn-icon"
+                                        style={{ width: "24px", height: "24px", background: "rgba(255, 71, 87, 0.1)", border: "none", color: "var(--accent-danger)" }}
+                                        onClick={() => handleCancelDetail(detail.id, detail.cooking_status, selectedTable.id, selectedTable.table_number)}
+                                      >
+                                        <X size={14} />
+                                      </button>
+                                    );
+                                  }
+                                  return null;
+                                })()}
+                              </div>
                             </div>
                           </div>
-                        </div>
-                      ))}
+                        ))}
                     </div>
                   ) : (
                     <div style={{ textAlign: "center", padding: "20px 0", color: "var(--text-secondary)", fontSize: "0.85rem" }}>
@@ -837,19 +1098,9 @@ export default function Dashboard() {
                     </div>
                   )}
 
-                  {/* BILL SUMMARY DISPLAY */}
+                  {/* Bill summary */}
                   {tableActiveInvoices[selectedTable.id] && (
-                    <div style={{
-                      padding: "16px",
-                      background: "var(--bg-primary)",
-                      borderRadius: "var(--border-radius-md)",
-                      border: "1px solid var(--glass-border)",
-                      display: "flex",
-                      flexDirection: "column",
-                      gap: "6px",
-                      fontSize: "0.85rem",
-                      marginTop: "12px"
-                    }}>
+                    <div style={{ padding: "16px", background: "var(--bg-primary)", borderRadius: "var(--border-radius-md)", border: "1px solid var(--glass-border)", display: "flex", flexDirection: "column", gap: "6px", fontSize: "0.85rem", marginTop: "12px" }}>
                       <div style={{ display: "flex", justifyContent: "space-between", color: "var(--text-secondary)" }}>
                         <span>Tiền món:</span>
                         <span style={{ fontWeight: 600, color: "var(--text-primary)" }}>{tableActiveInvoices[selectedTable.id].subtotal?.toLocaleString()}đ</span>
@@ -862,32 +1113,13 @@ export default function Dashboard() {
                         <span>Phí phục vụ (5%):</span>
                         <span style={{ fontWeight: 600, color: "var(--text-primary)" }}>{tableActiveInvoices[selectedTable.id].service_charge?.toLocaleString()}đ</span>
                       </div>
-                      <div style={{
-                        display: "flex", justifyContent: "space-between",
-                        fontSize: "1.05rem", fontWeight: 700,
-                        borderTop: "1px dashed var(--glass-border)", paddingTop: "8px", marginTop: "4px"
-                      }}>
+                      <div style={{ display: "flex", justifyContent: "space-between", fontSize: "1.05rem", fontWeight: 700, borderTop: "1px dashed var(--glass-border)", paddingTop: "8px", marginTop: "4px" }}>
                         <span>Tổng tiền:</span>
                         <span style={{ color: "var(--accent-primary)" }}>{tableActiveInvoices[selectedTable.id].total?.toLocaleString()}đ</span>
                       </div>
-
                       {selectedTable.status === "waiting_payment" && (
-                        <div style={{
-                          marginTop: "16px",
-                          padding: "12px",
-                          borderRadius: "var(--border-radius-sm)",
-                          background: "rgba(245, 158, 11, 0.1)",
-                          border: "1px solid rgba(245, 158, 11, 0.2)",
-                          color: "var(--accent-warning)",
-                          display: "flex",
-                          alignItems: "center",
-                          justifyContent: "center",
-                          gap: "8px",
-                          fontWeight: 600,
-                          fontSize: "0.85rem"
-                        }}>
-                          <DollarSign size={16} />
-                          Khách đang chờ thanh toán
+                        <div style={{ marginTop: "16px", padding: "12px", borderRadius: "var(--border-radius-sm)", background: "rgba(245, 158, 11, 0.1)", border: "1px solid rgba(245, 158, 11, 0.2)", color: "var(--accent-warning)", display: "flex", alignItems: "center", justifyContent: "center", gap: "8px", fontWeight: 600, fontSize: "0.85rem" }}>
+                          <DollarSign size={16} /> Khách đang chờ thanh toán
                         </div>
                       )}
                     </div>
@@ -897,7 +1129,7 @@ export default function Dashboard() {
             )}
           </div>
 
-          {/* TRANSFER TABLE OVERLAY MODAL LIST */}
+          {/* Transfer table modal */}
           {isTransferring && (
             <div className="modal-overlay" style={{ zIndex: 1000 }}>
               <div className="modal-container">
@@ -907,22 +1139,18 @@ export default function Dashboard() {
                     <X size={16} />
                   </button>
                 </div>
-                
                 <p style={{ fontSize: "0.85rem", color: "var(--text-secondary)", marginBottom: "16px" }}>
                   Chọn bàn trống cần chuyển session của Bàn {selectedTable.table_number} sang:
                 </p>
-
                 <div style={{ display: "flex", flexDirection: "column", gap: "10px", maxHeight: "250px", overflowY: "auto", paddingRight: "4px" }} className="hide-scrollbar">
-                  {tables.filter(t => t.status === "empty").map(emptyTable => (
+                  {tables.filter((t) => t.status === "empty").map((emptyTable) => (
                     <button
                       key={emptyTable.id}
                       className="btn btn-secondary"
                       style={{ justifyContent: "space-between", padding: "12px 18px", width: "100%", borderRadius: "var(--border-radius-md)" }}
                       onClick={() => {
                         const sessionId = tableActiveInvoices[selectedTable.id]?.session_id;
-                        if (sessionId) {
-                          handleTransferTable(sessionId, emptyTable.id, emptyTable.table_number);
-                        }
+                        if (sessionId) handleTransferTable(sessionId, emptyTable.id, emptyTable.table_number);
                       }}
                     >
                       <strong>Bàn {emptyTable.table_number}</strong>
@@ -931,9 +1159,56 @@ export default function Dashboard() {
                       </span>
                     </button>
                   ))}
-                  {tables.filter(t => t.status === "empty").length === 0 && (
+                  {tables.filter((t) => t.status === "empty").length === 0 && (
                     <p style={{ textAlign: "center", fontSize: "0.85rem", color: "var(--text-secondary)", padding: "10px 0" }}>
                       Không có bàn trống nào khả dụng.
+                    </p>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Merge table modal */}
+          {isMerging && (
+            <div className="modal-overlay" style={{ zIndex: 1000 }}>
+              <div className="modal-container">
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "16px" }}>
+                  <h3 style={{ margin: 0, fontSize: "1.1rem", fontWeight: 700 }}>Gộp bàn phục vụ</h3>
+                  <button className="btn-icon" onClick={() => setIsMerging(false)} style={{ width: "32px", height: "32px" }}>
+                    <X size={16} />
+                  </button>
+                </div>
+                <p style={{ fontSize: "0.85rem", color: "var(--text-secondary)", marginBottom: "16px" }}>
+                  Chọn bàn đích có khách để gộp session của Bàn {selectedTable.table_number} vào:
+                </p>
+                <div style={{ display: "flex", flexDirection: "column", gap: "10px", maxHeight: "250px", overflowY: "auto", paddingRight: "4px" }} className="hide-scrollbar">
+                  {tables
+                    .filter((t) => t.id !== selectedTable.id && (t.status === "occupied" || t.status === "waiting_payment"))
+                    .map((targetTable) => (
+                      <button
+                        key={targetTable.id}
+                        className="btn btn-secondary"
+                        style={{ justifyContent: "space-between", padding: "12px 18px", width: "100%", borderRadius: "var(--border-radius-md)" }}
+                        onClick={() => {
+                          const sourceSessionId = tableActiveInvoices[selectedTable.id]?.session_id;
+                          const targetSessionId = tableActiveInvoices[targetTable.id]?.session_id;
+                          if (sourceSessionId && targetSessionId) {
+                            handleMergeSessions(sourceSessionId, targetSessionId, targetTable.table_number);
+                          } else {
+                            alert("Không tìm thấy session ID của bàn đích hoặc bàn nguồn!");
+                          }
+                        }}
+                      >
+                        <strong>Bàn {targetTable.table_number}</strong>
+                        <span style={{ fontSize: "0.75rem", color: "var(--text-secondary)" }}>
+                          {targetTable.status === "waiting_payment" ? "Đang chờ thanh toán" : "Có khách"} • {getTableCapacity(targetTable.table_number)} người
+                        </span>
+                      </button>
+                    ))}
+                  {tables.filter((t) => t.id !== selectedTable.id && (t.status === "occupied" || t.status === "waiting_payment")).length === 0 && (
+                    <p style={{ textAlign: "center", fontSize: "0.85rem", color: "var(--text-secondary)", padding: "10px 0" }}>
+                      Không có bàn có khách nào khác khả dụng để gộp.
                     </p>
                   )}
                 </div>
@@ -943,25 +1218,22 @@ export default function Dashboard() {
         </>
       )}
 
-      {/* ===== REAL-TIME TOAST NOTIFICATIONS POPUPS CONTAINER ===== */}
+      {/* ===== TOAST NOTIFICATIONS ===== */}
       <div className="toast-container">
-        {toasts.map(t => (
+        {toasts.map((t) => (
           <div key={t.id} className={`toast ${t.type}`}>
             <div style={{ display: "flex", alignItems: "flex-start", gap: "8px" }}>
-              <AlertCircle size={18} style={{ marginTop: "2px", flexShrink: 0, color: t.type === "success" ? "var(--accent-secondary)" : t.type === "warning" ? "var(--accent-warning)" : "var(--accent-primary)" }} />
+              <AlertCircle size={18} style={{ marginTop: "2px", flexShrink: 0, color: t.type === "success" ? "var(--accent-secondary)" : t.type === "warning" ? "var(--accent-warning)" : t.type === "error" ? "var(--accent-danger)" : "var(--accent-primary)" }} />
               <div>
                 <strong style={{ fontSize: "0.88rem", fontWeight: 700, color: "var(--text-primary)" }}>
-                  {t.type === "success" ? "Thành công" : t.type === "warning" ? "Cảnh báo" : "Thông báo"}
+                  {t.type === "success" ? "Thành công" : t.type === "warning" ? "Cảnh báo" : t.type === "error" ? "Lỗi" : "Thông báo"}
                 </strong>
-                <p style={{ fontSize: "0.8rem", color: "var(--text-secondary)", margin: "2px 0 0 0" }}>
-                  {t.message}
-                </p>
+                <p style={{ fontSize: "0.8rem", color: "var(--text-secondary)", margin: "2px 0 0 0" }}>{t.message}</p>
               </div>
             </div>
           </div>
         ))}
       </div>
-
     </div>
   );
 }

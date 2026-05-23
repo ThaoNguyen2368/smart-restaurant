@@ -33,8 +33,8 @@ const getWsUrl = (token: string) => {
 
 const formatVnd = (value: number | string) => {
   const num = typeof value === "string" ? Number(value) : value;
-  if (Number.isNaN(num)) return "0d";
-  return new Intl.NumberFormat("vi-VN").format(num) + "d";
+  if (Number.isNaN(num)) return "0đ";
+  return new Intl.NumberFormat("vi-VN").format(num) + "đ";
 };
 
 export default function Dashboard() {
@@ -53,7 +53,7 @@ export default function Dashboard() {
       const res = await api.get("/kitchen/queue");
       setQueue(res.data.data ?? []);
     } catch (err: any) {
-      setError(err.response?.data?.detail || "Khong the tai hang doi bep.");
+      setError(err.response?.data?.detail || "Không thể tải hàng đợi bếp.");
     } finally {
       setLoading(false);
     }
@@ -85,7 +85,7 @@ export default function Dashboard() {
 
   const grouped = useMemo(() => {
     return {
-      pending: queue.filter((x) => x.cooking_status === "pending"),
+      pending: [] as any[],
       confirmed: queue.filter((x) => x.cooking_status === "confirmed"),
       cooking: queue.filter((x) => x.cooking_status === "cooking"),
       done: queue.filter((x) => x.cooking_status === "done"),
@@ -105,7 +105,7 @@ export default function Dashboard() {
       const message =
         typeof detail === "string"
           ? detail
-          : detail?.message || "Khong the cap nhat trang thai mon.";
+          : detail?.message || "Không thể cập nhật trạng thái món.";
       setError(message);
     } finally {
       setProcessingId(null);
@@ -122,7 +122,7 @@ export default function Dashboard() {
       const message =
         typeof detail === "string"
           ? detail
-          : detail?.message || "Khong the bao het mon.";
+          : detail?.message || "Không thể báo hết món.";
       setError(message);
     }
   };
@@ -133,7 +133,7 @@ export default function Dashboard() {
   };
 
   const renderCard = (item: QueueItem) => {
-    const itemName = item.menu_item?.name || `Mon #${item.item_id}`;
+    const itemName = item.menu_item?.name || `Món #${item.item_id}`;
     const tableId = item.order?.session?.table_id || "?";
 
     return (
@@ -142,23 +142,23 @@ export default function Dashboard() {
           <div>
             <h4>{itemName}</h4>
             <p className="muted">
-              Don #{item.order_id} • Ban {tableId}
+              Đơn #{item.order_id} • Bàn {tableId}
             </p>
           </div>
           <span className="qty">x{item.quantity}</span>
         </div>
-        <p className="muted small">Gia: {formatVnd(item.unit_price)}</p>
-        {item.note && <p className="note">Ghi chu: {item.note}</p>}
+        <p className="muted small">Giá: {formatVnd(item.unit_price)}</p>
+        {item.note && <p className="note">Ghi chú: {item.note}</p>}
 
         <div className="actions">
-          {(item.cooking_status === "pending" || item.cooking_status === "confirmed") && (
+          {item.cooking_status === "confirmed" && (
             <button
               className="btn btn-primary"
               disabled={processingId === item.id}
               onClick={() => updateStatus(item.id, "cooking")}
             >
               <Flame size={16} />
-              Bat dau nau
+              Bắt đầu nấu
             </button>
           )}
 
@@ -169,7 +169,7 @@ export default function Dashboard() {
               onClick={() => updateStatus(item.id, "done")}
             >
               <CheckCircle2 size={16} />
-              Danh dau xong
+              Đánh dấu xong
             </button>
           )}
 
@@ -180,7 +180,7 @@ export default function Dashboard() {
               onClick={() => updateStatus(item.id, "served")}
             >
               <CheckCircle2 size={16} />
-              Phuc vu
+              Phục vụ
             </button>
           )}
 
@@ -189,7 +189,7 @@ export default function Dashboard() {
             disabled={processingId === item.id}
             onClick={() => reportOutOfStock(item.item_id)}
           >
-            Bao het mon
+            Báo hết món
           </button>
         </div>
       </div>
@@ -201,29 +201,29 @@ export default function Dashboard() {
       <aside className="sidebar">
         <div>
           <h2>Smart OS</h2>
-          <p className="muted">Kitchen Portal • {user?.role}</p>
+          <p className="muted">Kitchen Portal • {user?.role === "kitchen" ? "Bếp trưởng" : user?.role}</p>
         </div>
         <div className="stats">
           <div className="stat">
-            <span>Cho nau</span>
-            <strong>{grouped.pending.length + grouped.confirmed.length}</strong>
+            <span>Chờ nấu</span>
+            <strong>{grouped.confirmed.length}</strong>
           </div>
           <div className="stat">
-            <span>Dang nau</span>
+            <span>Đang nấu</span>
             <strong>{grouped.cooking.length}</strong>
           </div>
           <div className="stat">
-            <span>Da xong</span>
+            <span>Đã xong</span>
             <strong>{grouped.done.length}</strong>
           </div>
         </div>
         <button className="btn btn-secondary" onClick={fetchQueue}>
           <RefreshCcw size={16} />
-          Tai lai
+          Tải lại
         </button>
         <button className="btn btn-danger" onClick={handleLogout}>
           <LogOut size={16} />
-          Dang xuat
+          Đăng xuất
         </button>
       </aside>
 
@@ -231,24 +231,23 @@ export default function Dashboard() {
         <header className="content-header">
           <h1>
             <ChefHat size={26} />
-            Hang doi bep
+            Hàng đợi bếp
           </h1>
         </header>
 
         {error && <div className="error-banner">{error}</div>}
 
         {loading ? (
-          <div className="center">Dang tai du lieu...</div>
+          <div className="center">Đang tải dữ liệu...</div>
         ) : (
           <div className="columns">
             <section>
-              <h3>Cho nau ({grouped.pending.length + grouped.confirmed.length})</h3>
+              <h3>Chờ nấu ({grouped.confirmed.length})</h3>
               <div className="list">
-                {grouped.pending.length + grouped.confirmed.length === 0 ? (
-                  <p className="muted">Khong co mon cho nau.</p>
+                {grouped.confirmed.length === 0 ? (
+                  <p className="muted">Không có món chờ nấu.</p>
                 ) : (
                   <>
-                    {grouped.pending.map(renderCard)}
                     {grouped.confirmed.map(renderCard)}
                   </>
                 )}
@@ -256,10 +255,10 @@ export default function Dashboard() {
             </section>
 
             <section>
-              <h3>Dang nau ({grouped.cooking.length})</h3>
+              <h3>Đang nấu ({grouped.cooking.length})</h3>
               <div className="list">
                 {grouped.cooking.length === 0 ? (
-                  <p className="muted">Khong co mon dang nau.</p>
+                  <p className="muted">Không có món đang nấu.</p>
                 ) : (
                   grouped.cooking.map(renderCard)
                 )}
@@ -267,10 +266,10 @@ export default function Dashboard() {
             </section>
 
             <section>
-              <h3>Da xong ({grouped.done.length})</h3>
+              <h3>Đã xong ({grouped.done.length})</h3>
               <div className="list">
                 {grouped.done.length === 0 ? (
-                  <p className="muted">Khong co mon cho phuc vu.</p>
+                  <p className="muted">Không có món chờ phục vụ.</p>
                 ) : (
                   grouped.done.map(renderCard)
                 )}

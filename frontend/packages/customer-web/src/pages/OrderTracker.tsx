@@ -102,7 +102,10 @@ export default function OrderTracker() {
       await api.patch(`/order-details/${detailId}/cancel`);
       fetchInvoice();
     } catch (err: any) {
-      alert(err.response?.data?.detail || "Lỗi huỷ món");
+      const detail = err.response?.data?.detail;
+      const message = typeof detail === "object" ? detail.message : detail;
+      alert(message || "Lỗi huỷ món. Món ăn có thể đã được nhân viên duyệt nấu.");
+      fetchInvoice();
     }
   };
 

@@ -91,6 +91,7 @@ export default function Dashboard() {
   const [amount, setAmount] = useState("");
   const [transactionRef, setTransactionRef] = useState("");
   const [processing, setProcessing] = useState(false);
+  const [shiftSummary, setShiftSummary] = useState<any>(null);
 
   const getErrorMessage = (err: any, fallback: string) => {
     const detail = err?.response?.data?.detail;
@@ -161,11 +162,21 @@ export default function Dashboard() {
     }
   };
 
+  const fetchShiftSummary = async () => {
+    try {
+      const res = await api.get("/shift-summary");
+      setShiftSummary(res.data.data);
+    } catch (err) {
+      console.error("Không thể tải lịch sử ca làm việc", err);
+    }
+  };
+
   useEffect(() => {
     if (!token) return;
     
-    // Fetch initial queue
+    // Fetch initial queue and summary
     fetchWaitingQueue();
+    fetchShiftSummary();
 
     const ws = new WebSocket(getWsUrl(token));
     wsRef.current = ws;
@@ -305,6 +316,7 @@ export default function Dashboard() {
             : undefined,
       });
       await fetchInvoice(String(invoice.session_id));
+      await fetchShiftSummary();
       setTransactionRef("");
     } catch (err: any) {
       setError(getErrorMessage(err, "Không thể ghi nhận thanh toán."));
@@ -327,6 +339,7 @@ export default function Dashboard() {
         setSelectedSessionId("");
         setAmount("");
         setTransactionRef("");
+        await fetchShiftSummary();
       }
     } catch (err: any) {
       setError(
@@ -617,6 +630,115 @@ export default function Dashboard() {
             </section>
           </div>
         )}
+
+        {/* Lịch sử ca làm việc (Shift Summary) */}
+        <div className="shift-summary-card glass" style={{ marginTop: "24px", padding: "24px", borderRadius: "var(--border-radius-lg)", boxShadow: "var(--shadow-card)" }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "20px", borderBottom: "1px solid var(--glass-border)", paddingBottom: "12px" }}>
+            <div>
+              <h3 style={{ fontSize: "1.2rem", fontWeight: 700, fontFamily: "Sora" }}>Lịch sử ca làm việc &amp; Báo cáo doanh thu</h3>
+              <p className="muted" style={{ fontSize: "0.85rem", marginTop: "2px" }}>Danh sách các giao dịch thanh toán thành công trong ca trực của bạn</p>
+            </div>
+            <div style={{ textAlign: "right" }}>
+              <span className="muted" style={{ fontSize: "0.85rem" }}>Tổng thu trong ca:</span>
+              <h2 style={{ color: "var(--accent-secondary)", fontSize: "1.6rem", fontWeight: 700, marginTop: "4px" }}>
+                {shiftSummary ? formatVnd(shiftSummary.total_collected) : "0đ"}
+              </h2>
+            </div>
+          </div>
+
+          {/* Thống kê theo phương thức */}
+          {shiftSummary && (
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: "16px", marginBottom: "24px" }}>
+              <div style={{ background: "rgba(255, 255, 255, 0.02)", padding: "16px", borderRadius: "12px", border: "1px solid var(--glass-border)" }}>
+                <span className="muted" style={{ fontSize: "0.8rem" }}>💵 Tiền mặt</span>
+                <h4 style={{ fontSize: "1.15rem", fontWeight: 700, marginTop: "6px" }}>{formatVnd(shiftSummary.payments_by_method?.cash || 0)}</h4>
+              </div>
+              <div style={{ background: "rgba(255, 255, 255, 0.02)", padding: "16px", borderRadius: "12px", border: "1px solid var(--glass-border)" }}>
+                <span className="muted" style={{ fontSize: "0.8rem" }}>💳 Thanh toán Thẻ</span>
+                <h4 style={{ fontSize: "1.15rem", fontWeight: 700, marginTop: "6px" }}>{formatVnd(shiftSummary.payments_by_method?.card || 0)}</h4>
+              </div>
+              <div style={{ background: "rgba(255, 255, 255, 0.02)", padding: "16px", borderRadius: "12px", border: "1px solid var(--glass-border)" }}>
+                <span className="muted" style={{ fontSize: "0.8rem" }}>🏦 Chuyển khoản</span>
+                <h4 style={{ fontSize: "1.15rem", fontWeight: 700, marginTop: "6px" }}>{formatVnd(shiftSummary.payments_by_method?.transfer || 0)}</h4>
+              </div>
+              <div style={{ background: "rgba(255, 255, 255, 0.02)", padding: "16px", borderRadius: "12px", border: "1px solid var(--glass-border)" }}>
+                <span className="muted" style={{ fontSize: "0.8rem" }}>🎟️ Voucher</span>
+                <h4 style={{ fontSize: "1.15rem", fontWeight: 700, marginTop: "6px" }}>{formatVnd(shiftSummary.payments_by_method?.voucher || 0)}</h4>
+              </div>
+            </div>
+          )}
+
+          {/* Danh sách giao dịch */}
+          <div style={{ overflowX: "auto" }}>
+            <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.9rem" }}>
+              <thead>
+                <tr style={{ borderBottom: "2px solid var(--glass-border)", textAlign: "left" }}>
+                  <th style={{ padding: "12px 8px", color: "var(--text-secondary)" }}>Thời gian</th>
+                  <th style={{ padding: "12px 8px", color: "var(--text-secondary)" }}>Mã phiên</th>
+                  <th style={{ padding: "12px 8px", color: "var(--text-secondary)" }}>Phương thức</th>
+                  <th style={{ padding: "12px 8px", color: "var(--text-secondary)" }}>Mã giao dịch (Ref)</th>
+                  <th style={{ padding: "12px 8px", color: "var(--text-secondary)", textAlign: "right" }}>Số tiền</th>
+                </tr>
+              </thead>
+              <tbody>
+                {shiftSummary && shiftSummary.payments && shiftSummary.payments.length > 0 ? (
+                  shiftSummary.payments.map((p: any) => (
+                    <tr key={p.id} style={{ borderBottom: "1px solid rgba(255, 255, 255, 0.05)" }}>
+                      <td style={{ padding: "12px 8px", color: "var(--text-secondary)" }}>
+                        {p.paid_at ? (
+                          <>
+                            <div style={{ fontWeight: 600, color: "var(--text-primary)" }}>
+                              {new Date(p.paid_at).toLocaleTimeString("vi-VN")}
+                            </div>
+                            <div style={{ fontSize: "0.78rem" }}>
+                              {new Date(p.paid_at).toLocaleDateString("vi-VN")}
+                            </div>
+                          </>
+                        ) : (
+                          "-"
+                        )}
+                      </td>
+                      <td style={{ padding: "12px 8px" }}>
+                        <button 
+                          onClick={() => setSelectedSessionId(String(p.session_id))}
+                          style={{ background: "none", border: "none", color: "var(--accent-primary)", cursor: "pointer", fontWeight: 600, padding: 0, textDecoration: "underline" }}
+                        >
+                          #{p.session_id}
+                        </button>
+                      </td>
+                      <td style={{ padding: "12px 8px" }}>
+                        <span style={{ 
+                          fontSize: "0.75rem", fontWeight: 700, padding: "2px 8px", borderRadius: "var(--border-radius-pill)",
+                          background: p.payment_method === "cash" ? "rgba(20, 184, 166, 0.12)" : p.payment_method === "card" ? "rgba(51, 154, 240, 0.12)" : p.payment_method === "transfer" ? "rgba(245, 158, 11, 0.12)" : "rgba(239, 68, 68, 0.12)",
+                          color: p.payment_method === "cash" ? "#10b981" : p.payment_method === "card" ? "#339af0" : p.payment_method === "transfer" ? "#f59e0b" : "#ef4444"
+                        }}>
+                          {p.payment_method.toUpperCase()}
+                        </span>
+                      </td>
+                      <td style={{ padding: "12px 8px", color: "var(--text-secondary)" }}>
+                        <div style={{ fontWeight: 600, color: "var(--text-primary)" }}>GD #{p.id}</div>
+                        {p.transaction_ref && (
+                          <div style={{ fontSize: "0.78rem", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: "150px" }} title={p.transaction_ref}>
+                            Ref: {p.transaction_ref}
+                          </div>
+                        )}
+                      </td>
+                      <td style={{ padding: "12px 8px", textAlign: "right", fontWeight: 600 }}>
+                        {formatVnd(p.amount)}
+                      </td>
+                    </tr>
+                  ))
+                ) : (
+                  <tr>
+                    <td colSpan={5} style={{ textAlign: "center", padding: "24px 0", color: "var(--text-secondary)" }}>
+                      Chưa có giao dịch thanh toán nào được thực hiện trong ca trực này.
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
       </main>
 
       {invoice && (

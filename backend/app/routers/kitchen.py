@@ -8,7 +8,7 @@ from app.core.database import get_db
 from app.middleware.auth import get_current_user
 from app.middleware.rbac import require_roles
 from app.models.staff_user import StaffUser
-from app.schemas.order import CookingStatusUpdate
+from app.schemas.order import CookingStatusUpdate, OrderDetailResponse
 from app.schemas.common import api_response
 from app.services import kitchen_service, menu_service
 from pydantic import BaseModel
@@ -24,7 +24,8 @@ def get_queue(category_id: int | None = None, current_user: StaffUser = Depends(
     """Get cooking queue (FIFO). Optionally filter by category."""
     user = require_roles("kitchen", "admin")(current_user)
     queue = kitchen_service.get_kitchen_queue(db, category_id=category_id)
-    return api_response(queue)
+    data = [OrderDetailResponse.model_validate(item) for item in queue]
+    return api_response(data)
 
 
 @router.patch("/order-details/{detail_id}/status")

@@ -1,7 +1,8 @@
 # routers/staff.py — Staff API (ERS Section 7.2)
 # Auth: JWT with role staff/manager/admin
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException, Request
+from typing import Optional
 from sqlalchemy.orm import Session as DBSession
 
 from app.core.database import get_db
@@ -9,6 +10,9 @@ from app.middleware.auth import get_current_user
 from app.middleware.rbac import require_roles
 from app.models.staff_user import StaffUser
 from app.models.table import Table
+from app.models.order_detail import OrderDetail
+from app.models.session import Session
+from app.models.order import Order
 from app.schemas.session import TableTransferRequest, SessionResponse
 from app.schemas.order import CancelRequest, OrderResponse, SubstituteItemRequest, OrderUpdateRequest
 from app.schemas.common import api_response
@@ -70,11 +74,59 @@ async def reject_order(order_id: int, current_user: StaffUser = Depends(get_curr
 
 
 @router.patch("/order-details/{detail_id}/cancel")
-async def cancel_detail(detail_id: int, data: CancelRequest, current_user: StaffUser = Depends(get_current_user), db: DBSession = Depends(get_db)):
-    """Cancel item (pending/confirmed)."""
-    user = require_roles("staff", "manager", "admin")(current_user)
-    result = await kitchen_service.cancel_order_detail(db, detail_id, user.id, user.role, data.cancel_reason)
-    return api_response({"detail_id": result.id, "cooking_status": result.cooking_status})
+async def cancel_detail(
+    detail_id: int, 
+    request: Request,
+    data: Optional[CancelRequest] = None, 
+    db: DBSession = Depends(get_db)
+):
+    """Cancel item (pending/confirmed). Supports both Staff (JWT) and Customer (X-Session-ID)."""
+    auth_header = request.headers.get("Authorization")
+    session_id_header = request.headers.get("X-Session-ID")
+    
+    if auth_header:
+        # 1. Staff Authentication
+        from app.core.security import decode_access_token
+        try:
+            token = auth_header.replace("Bearer ", "")
+            payload = decode_access_token(token)
+            if not payload:
+                raise HTTPException(status_code=401, detail="Invalid token")
+            username = payload.get("sub")
+            if not username:
+                raise HTTPException(status_code=401, detail="Invalid token payload")
+            user = db.query(StaffUser).filter(StaffUser.username == username).first()
+            if not user or not user.is_active:
+                raise HTTPException(status_code=401, detail="User not found or inactive")
+                
+            require_roles("staff", "manager", "admin")(user)
+            
+            cancel_reason = data.cancel_reason if data else None
+            result = await kitchen_service.cancel_order_detail(db, detail_id, user.id, user.role, cancel_reason)
+            return api_response({"detail_id": result.id, "cooking_status": result.cooking_status})
+        except Exception as e:
+            if isinstance(e, HTTPException):
+                raise e
+            raise HTTPException(status_code=401, detail="Authentication failed")
+            
+    elif session_id_header:
+        # 2. Customer Session Authentication
+        session = db.query(Session).filter(Session.id == int(session_id_header), Session.status.in_(["open", "waiting_payment"])).first()
+        if not session:
+            raise HTTPException(status_code=401, detail="Invalid or closed session")
+            
+        detail = db.query(OrderDetail).filter(OrderDetail.id == detail_id).first()
+        if not detail:
+            raise HTTPException(status_code=404, detail="Order detail not found")
+        order = db.query(Order).filter(Order.id == detail.order_id).first()
+        if not order or order.session_id != session.id:
+            raise HTTPException(status_code=403, detail="Not authorized to cancel this item")
+            
+        result = await kitchen_service.cancel_order_detail(db, detail_id, actor_id=None, actor_role="customer")
+        return api_response({"detail_id": result.id, "cooking_status": result.cooking_status})
+        
+    else:
+        raise HTTPException(status_code=401, detail="Not authenticated. Provide Authorization or X-Session-ID header.")
 
 
 @router.post("/order-details/{detail_id}/cancel-request")
@@ -84,9 +136,21 @@ async def propose_cancel(detail_id: int, data: CancelRequest, current_user: Staf
     if user.role in ("manager", "admin"):
         result = await kitchen_service.cancel_order_detail(db, detail_id, user.id, user.role, data.cancel_reason)
         return api_response({"detail_id": result.id, "cooking_status": result.cooking_status})
+    
+    detail = db.query(OrderDetail).filter(OrderDetail.id == detail_id).first()
+    item_name = detail.menu_item.name if detail and detail.menu_item else f"Món #{detail.item_id}"
+    table_number = detail.order.session.table.table_number if detail and detail.order and detail.order.session and detail.order.session.table else 0
+    
     from app.websocket.manager import ws_manager
     from app.websocket.events import WSEvent
-    await ws_manager.broadcast("staff", WSEvent.create("CANCEL_REQUEST_PENDING", {"order_detail_id": detail_id, "requested_by": user.id, "reason": data.cancel_reason}))
+    await ws_manager.broadcast("staff", WSEvent.create("CANCEL_REQUEST_PENDING", {
+        "order_detail_id": detail_id,
+        "item_name": item_name,
+        "table_number": table_number,
+        "requested_by": user.id,
+        "requested_by_name": user.display_name,
+        "reason": data.cancel_reason
+    }))
     return api_response({"message": "Cancel request submitted, awaiting Manager approval"})
 
 

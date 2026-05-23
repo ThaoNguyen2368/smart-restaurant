@@ -49,11 +49,11 @@ def get_order(order_id: int, session: Session = Depends(get_current_session), db
     return api_response(OrderResponse.model_validate(order))
 
 
-@router.patch("/order-details/{detail_id}/cancel")
-async def cancel_item(detail_id: int, session: Session = Depends(get_current_session), db: DBSession = Depends(get_db)):
-    """Cancel item in pending status (Customer)."""
-    result = await kitchen_service.cancel_order_detail(db, detail_id, actor_id=None, actor_role="customer")
-    return api_response({"detail_id": result.id, "cooking_status": result.cooking_status})
+# @router.patch("/order-details/{detail_id}/cancel")
+# async def cancel_item(detail_id: int, session: Session = Depends(get_current_session), db: DBSession = Depends(get_db)):
+#     """Cancel item in pending status (Customer)."""
+#     result = await kitchen_service.cancel_order_detail(db, detail_id, actor_id=None, actor_role="customer")
+#     return api_response({"detail_id": result.id, "cooking_status": result.cooking_status})
 
 
 @router.post("/sessions/{session_id}/payment-request")

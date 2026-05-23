@@ -84,6 +84,7 @@ async def confirm_order(db: DBSession, order_id: int, actor_id: int, actor_role:
     db.commit()
 
     await ws_manager.broadcast("kitchen", WSEvent.create("NEW_ORDER_CONFIRMED", {"order_id": order_id}))
+    await ws_manager.broadcast(f"orders:{order.session_id}", WSEvent.create("ORDER_UPDATED", {"order_id": order_id, "status": "confirmed"}))
     db.refresh(order)
     return order
 

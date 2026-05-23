@@ -1,7 +1,7 @@
 # services/kitchen_service.py — Kitchen operations
 from datetime import datetime, timezone
 from fastapi import HTTPException, status
-from sqlalchemy.orm import Session as DBSession
+from sqlalchemy.orm import Session as DBSession, joinedload
 
 from app.models.order_detail import OrderDetail
 from app.models.order import Order
@@ -17,11 +17,14 @@ def get_kitchen_queue(db: DBSession, category_id: int | None = None) -> list[Ord
     query = (
         db.query(OrderDetail)
         .join(Order)
-        .join(MenuItem, OrderDetail.item_id == MenuItem.id)
-        .filter(OrderDetail.cooking_status.in_(["pending", "confirmed", "cooking", "done"]))
+        .options(
+            joinedload(OrderDetail.menu_item),
+            joinedload(OrderDetail.order).joinedload(Order.session)
+        )
+        .filter(OrderDetail.cooking_status.in_(["confirmed", "cooking", "done"]))
     )
     if category_id is not None:
-        query = query.filter(MenuItem.category_id == category_id)
+        query = query.join(MenuItem, OrderDetail.item_id == MenuItem.id).filter(MenuItem.category_id == category_id)
         
     return query.order_by(Order.created_at).all()
 
@@ -61,6 +64,8 @@ async def cancel_order_detail(db: DBSession, detail_id: int, actor_id: int, acto
     detail.cancel_reason = cancel_reason
     detail.cancelled_by = actor_id
     detail.cancelled_at = datetime.now(timezone.utc)
+
+    db.flush()
 
     # BR-002: Recalculate order total
     recalculate_order_total(db, detail.order_id)
@@ -114,6 +119,8 @@ async def substitute_order_detail(db: DBSession, detail_id: int, new_item_id: in
     # Update to new item
     detail.item_id = new_item.id
     detail.unit_price = new_item.price
+    
+    db.flush()
     
     # Recalculate order total
     recalculate_order_total(db, detail.order_id)
