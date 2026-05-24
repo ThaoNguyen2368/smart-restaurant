@@ -20,6 +20,9 @@ import {
   Search,
   Filter,
   UserCircle,
+  Bell,
+  DollarSign,
+  Calendar,
 } from "lucide-react";
 import { api } from "./api";
 import { useAuthStore } from "./store";
@@ -62,6 +65,7 @@ interface Table {
 export default function App() {
   const { token, user, login, logout } = useAuthStore();
   const [activeTab, setActiveTab] = useState("dashboard");
+  const [reportsSubTab, setReportsSubTab] = useState<"revenue" | "top-items" | "service-speed">("revenue");
   const [loading, setLoading] = useState(false);
 
   // Auth State
@@ -258,12 +262,40 @@ export default function App() {
             </button>
           )}
 
-          <button
-            className={`nav-item ${activeTab === "reports" ? "active" : ""}`}
-            onClick={() => setActiveTab("reports")}
-          >
-            <BarChart3 size={18} /> Báo cáo doanh thu
-          </button>
+          <div style={{ display: "flex", flexDirection: "column" }}>
+            <button
+              className={`nav-item ${activeTab === "reports" ? "active" : ""}`}
+              onClick={() => { setActiveTab("reports"); }}
+              style={{ width: "100%" }}
+            >
+              <BarChart3 size={18} /> Thống kê & Báo cáo
+            </button>
+            {activeTab === "reports" && (
+              <div style={{ paddingLeft: "16px", display: "flex", flexDirection: "column", gap: "4px", marginTop: "4px", marginBottom: "8px" }}>
+                <button
+                  className={`nav-item ${reportsSubTab === "revenue" ? "active" : ""}`}
+                  onClick={() => setReportsSubTab("revenue")}
+                  style={{ padding: "8px 12px", fontSize: "0.82rem", height: "auto" }}
+                >
+                  Doanh thu
+                </button>
+                <button
+                  className={`nav-item ${reportsSubTab === "top-items" ? "active" : ""}`}
+                  onClick={() => setReportsSubTab("top-items")}
+                  style={{ padding: "8px 12px", fontSize: "0.82rem", height: "auto" }}
+                >
+                  Top 10 món bán chạy nhất
+                </button>
+                <button
+                  className={`nav-item ${reportsSubTab === "service-speed" ? "active" : ""}`}
+                  onClick={() => setReportsSubTab("service-speed")}
+                  style={{ padding: "8px 12px", fontSize: "0.82rem", height: "auto" }}
+                >
+                  Tốc độ chuẩn bị món tại Bếp
+                </button>
+              </div>
+            )}
+          </div>
           {!isManager && (
             <>
               <button
@@ -294,7 +326,7 @@ export default function App() {
 
       <main className="admin-main">
         <header className="admin-header glass">
-          <h1 style={{ fontWeight: 800, color: "#000000" }}>
+          <h1 style={{ fontWeight: 700, fontSize: "1.35rem", color: "var(--text-primary)" }}>
             {activeTab === "dashboard" && "Dashboard Tổng quan"}
             {activeTab === "menu" && "Quản lý Menu Items"}
             {activeTab === "tables" && "Quản lý Sơ đồ bàn"}
@@ -304,13 +336,17 @@ export default function App() {
             {activeTab === "audit-logs" && "Nhật ký kiểm toán (Audit Logs)"}
           </h1>
           <div className="user-info">
+            <div className="notification-container">
+              <Bell size={18} />
+              <span className="notification-badge">5</span>
+            </div>
             <div style={{ textAlign: "right" }}>
-              <div style={{ fontWeight: 600, fontSize: "0.9rem" }}>{user?.sub}</div>
+              <div style={{ fontWeight: 600, fontSize: "0.95rem" }}>{user?.sub}</div>
               <span style={{ fontSize: "0.75rem", color: "var(--text-secondary)", textTransform: "capitalize" }}>
                 {user?.role === "admin" ? "Quản trị viên (Admin)" : "Quản lý sảnh (Manager)"}
               </span>
             </div>
-            <div className="avatar" style={{ fontWeight: 800 }}>
+            <div className="avatar" style={{ fontWeight: 700 }}>
               {user?.sub.charAt(0).toUpperCase()}
             </div>
           </div>
@@ -378,7 +414,7 @@ export default function App() {
           {activeTab === "dashboard" && <DashboardView />}
           {activeTab === "menu" && <MenuManager />}
           {activeTab === "tables" && !isManager && <TableManager />}
-          {activeTab === "reports" && <ReportsView />}
+          {activeTab === "reports" && <ReportsView subTab={reportsSubTab} setSubTab={setReportsSubTab} />}
           {activeTab === "staff" && !isManager && <StaffManager />}
           {activeTab === "tax-config" && !isManager && <TaxConfigView />}
           {activeTab === "audit-logs" && !isManager && <AuditLogsView />}
@@ -454,16 +490,19 @@ function DashboardView() {
   return (
     <div className="dashboard-grid animate-fade-in">
       <div className="glass stat-card">
+        <DollarSign className="stat-card-icon" size={24} />
         <h3 style={{ fontSize: "0.9rem", color: "var(--text-secondary)", fontWeight: 500 }}>Doanh thu hôm nay</h3>
         <p className="stat-value" style={{ color: "var(--text-primary)" }}>{stats.todayRevenue.toLocaleString()}đ</p>
         <span className="stat-change">Từ các hoá đơn đã thanh toán hoàn thành</span>
       </div>
       <div className="glass stat-card">
+        <Utensils className="stat-card-icon" size={24} />
         <h3 style={{ fontSize: "0.9rem", color: "var(--text-secondary)", fontWeight: 500 }}>Bàn đang hoạt động</h3>
         <p className="stat-value" style={{ color: "var(--text-primary)" }}>{stats.activeSessions}</p>
         <span className="stat-change">{stats.waitingPayment} bàn đang chờ thanh toán</span>
       </div>
       <div className="glass stat-card">
+        <Activity className="stat-card-icon" size={24} />
         <h3 style={{ fontSize: "0.9rem", color: "var(--text-secondary)", fontWeight: 500 }}>Trạng thái kết nối</h3>
         <p className="stat-value" style={{ fontSize: "1.5rem", marginTop: "16px", display: "flex", alignItems: "center", gap: "8px", color: "#10B981" }}>
           <Activity size={24} style={{ color: "#10B981" }} /> Ổn định
@@ -644,7 +683,7 @@ function MenuManager() {
       {/* Search & Filter Bar */}
       <div className="menu-toolbar glass">
         <div className="menu-search-box">
-          <Search size={16} style={{ color: "var(--text-secondary)" }} />
+          <Search size={18} style={{ color: "var(--text-tertiary)" }} />
           <input
             type="text"
             placeholder="Tìm kiếm món ăn..."
@@ -754,17 +793,18 @@ function MenuManager() {
                   <td>
                     <div className="actions" style={{ justifyContent: "center" }}>
                       <button
-                        className={`btn-toggle-avail ${item.is_available ? "btn-hide" : "btn-show"}`}
+                        className="btn-icon"
                         onClick={() => handleToggleAvailability(item)}
                         disabled={toggling === item.id}
                         title={item.is_available ? "Ẩn khỏi menu (hết món)" : "Hiện lại trên menu (có món)"}
+                        style={{ color: item.is_available ? "var(--accent-danger)" : "var(--accent-secondary)" }}
                       >
                         {toggling === item.id ? (
                           <Loader2 className="animate-spin" size={14} />
                         ) : item.is_available ? (
-                          <><EyeOff size={14} /> Ẩn</>
+                          <EyeOff size={14} />
                         ) : (
-                          <><Eye size={14} /> Hiện</>
+                          <Eye size={14} />
                         )}
                       </button>
                       <button className="btn-icon" onClick={() => openEditModal(item)} title="Chỉnh sửa">
@@ -1093,8 +1133,13 @@ function TableManager() {
 }
 
 // 4. Reports View
-function ReportsView() {
-  const [subTab, setSubTab] = useState<"revenue" | "top-items" | "service-speed">("revenue");
+function ReportsView({
+  subTab,
+  setSubTab,
+}: {
+  subTab: "revenue" | "top-items" | "service-speed";
+  setSubTab: (tab: "revenue" | "top-items" | "service-speed") => void;
+}) {
   const [loading, setLoading] = useState(false);
 
   // Filters
@@ -1106,6 +1151,9 @@ function ReportsView() {
   const [revReport, setRevReport] = useState<any>(null);
   const [topItems, setTopItems] = useState<any[]>([]);
   const [speedData, setSpeedData] = useState<any>(null);
+
+  // Chart hover state
+  const [hoveredPoint, setHoveredPoint] = useState<any>(null);
 
   const fetchRevenue = async () => {
     setLoading(true);
@@ -1160,6 +1208,157 @@ function ReportsView() {
     ? Math.max(...revReport.data.map((d: any) => parseFloat(d.revenue)))
     : 0;
 
+  // Render modern SVG Line Chart
+  const renderLineChart = () => {
+    const data = revReport?.data || [];
+    if (data.length === 0) {
+      return (
+        <div style={{ height: "240px", display: "flex", alignItems: "center", justifyContent: "center", color: "var(--text-secondary)", fontSize: "0.9rem" }}>
+          Chưa có dữ liệu giao dịch trong khoảng thời gian này.
+        </div>
+      );
+    }
+
+    const width = 800;
+    const height = 240;
+    const paddingLeft = 60;
+    const paddingRight = 20;
+    const paddingTop = 20;
+    const paddingBottom = 40;
+
+    const chartWidth = width - paddingLeft - paddingRight;
+    const chartHeight = height - paddingTop - paddingBottom;
+    const maxVal = maxRevenue > 0 ? maxRevenue : 10000;
+
+    const points = data.map((d: any, i: number) => {
+      const val = parseFloat(d.revenue) || 0;
+      const x = paddingLeft + (i / Math.max(1, data.length - 1)) * chartWidth;
+      const y = paddingTop + (1 - val / maxVal) * chartHeight;
+      return { x, y, val, date: d.date };
+    });
+
+    let linePath = "";
+    let areaPath = "";
+
+    if (points.length > 0) {
+      linePath = points.map((p: any, i: number) => `${i === 0 ? "M" : "L"} ${p.x} ${p.y}`).join(" ");
+      areaPath = `${linePath} L ${points[points.length - 1].x} ${height - paddingBottom} L ${points[0].x} ${height - paddingBottom} Z`;
+    }
+
+    const gridLines = [];
+    const yTicksCount = 4;
+    for (let i = 0; i <= yTicksCount; i++) {
+      const yVal = (i / yTicksCount) * maxVal;
+      const y = paddingTop + (1 - i / yTicksCount) * chartHeight;
+      gridLines.push({ y, val: yVal });
+    }
+
+    return (
+      <div className="chart-svg-container">
+        {hoveredPoint && (
+          <div
+            className="chart-tooltip"
+            style={{
+              left: `${(hoveredPoint.x / width) * 100}%`,
+              top: `${(hoveredPoint.y / height) * 100}%`,
+              opacity: 1,
+            }}
+          >
+            <div style={{ fontSize: "0.7rem", color: "#9CA3AF", marginBottom: "2px" }}>{hoveredPoint.date}</div>
+            <div style={{ fontSize: "0.85rem", fontWeight: 700, color: "#FFFFFF" }}>{hoveredPoint.val.toLocaleString()}đ</div>
+          </div>
+        )}
+
+        <svg viewBox={`0 0 ${width} ${height}`} width="100%" height="240px" style={{ overflow: "visible" }}>
+          <defs>
+            <linearGradient id="chart-area-grad" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stopColor="var(--accent-primary)" stopOpacity="0.2" />
+              <stop offset="100%" stopColor="var(--accent-primary)" stopOpacity="0.0" />
+            </linearGradient>
+          </defs>
+
+          {/* Grid lines */}
+          {gridLines.map((line, idx) => (
+            <g key={idx}>
+              <line
+                x1={paddingLeft}
+                y1={line.y}
+                x2={width - paddingRight}
+                y2={line.y}
+                className="chart-grid-line"
+              />
+              <text
+                x={paddingLeft - 12}
+                y={line.y + 4}
+                className="chart-label-y"
+              >
+                {line.val >= 1000000
+                  ? `${(line.val / 1000000).toFixed(1)}M`
+                  : line.val >= 1000
+                    ? `${(line.val / 1000).toFixed(0)}k`
+                    : line.val}
+              </text>
+            </g>
+          ))}
+
+          {/* Gradient area */}
+          {areaPath && (
+            <path
+              d={areaPath}
+              fill="url(#chart-area-grad)"
+            />
+          )}
+
+          {/* Line Path */}
+          {linePath && (
+            <path
+              d={linePath}
+              className="chart-line-path"
+            />
+          )}
+
+          {/* X Axis line */}
+          <line
+            x1={paddingLeft}
+            y1={height - paddingBottom}
+            x2={width - paddingRight}
+            y2={height - paddingBottom}
+            className="chart-axis-line"
+          />
+
+          {/* Dots */}
+          {points.map((p: any, idx: number) => (
+            <circle
+              key={idx}
+              cx={p.x}
+              cy={p.y}
+              r={hoveredPoint && hoveredPoint.date === p.date ? 6 : 4}
+              className="chart-dot"
+              onMouseEnter={() => setHoveredPoint(p)}
+              onMouseLeave={() => setHoveredPoint(null)}
+            />
+          ))}
+
+          {/* X Labels */}
+          {points.map((p: any, idx: number) => {
+            const showLabel = points.length < 12 || idx % Math.ceil(points.length / 8) === 0 || idx === points.length - 1;
+            if (!showLabel) return null;
+            return (
+              <text
+                key={idx}
+                x={p.x}
+                y={height - paddingBottom + 20}
+                className="chart-label-text"
+              >
+                {p.date.substring(5)}
+              </text>
+            );
+          })}
+        </svg>
+      </div>
+    );
+  };
+
   return (
     <div className="reports-view animate-fade-in" style={{ display: "flex", flexDirection: "column", gap: "24px" }}>
       {/* Sub Tabs */}
@@ -1168,10 +1367,10 @@ function ReportsView() {
           <BarChart3 size={14} /> Doanh thu
         </button>
         <button className={`filter-btn ${subTab === "top-items" ? "active" : ""}`} onClick={() => setSubTab("top-items")}>
-          <Utensils size={14} /> Món bán chạy
+          <Utensils size={14} /> Top 10 món ăn bán chạy nhất
         </button>
         <button className={`filter-btn ${subTab === "service-speed" ? "active" : ""}`} onClick={() => setSubTab("service-speed")}>
-          <Clock size={14} /> Tốc độ chuẩn bị món
+          <Clock size={14} /> Tốc độ chuẩn bị món ăn tại Bếp
         </button>
       </div>
 
@@ -1184,13 +1383,19 @@ function ReportsView() {
       {!loading && subTab === "revenue" && (
         <div className="glass report-card animate-fade-in" style={{ padding: "24px", borderRadius: "16px" }}>
           <div className="report-filters">
-            <div className="form-group" style={{ marginBottom: 0 }}>
+            <div className="form-group" style={{ marginBottom: 0, position: "relative" }}>
               <label>Từ ngày</label>
-              <input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} />
+              <div style={{ position: "relative" }}>
+                <Calendar size={16} style={{ position: "absolute", left: "12px", top: "50%", transform: "translateY(-50%)", color: "var(--text-tertiary)", pointerEvents: "none" }} />
+                <input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} style={{ paddingLeft: "36px" }} />
+              </div>
             </div>
-            <div className="form-group" style={{ marginBottom: 0 }}>
+            <div className="form-group" style={{ marginBottom: 0, position: "relative" }}>
               <label>Đến ngày</label>
-              <input type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} />
+              <div style={{ position: "relative" }}>
+                <Calendar size={16} style={{ position: "absolute", left: "12px", top: "50%", transform: "translateY(-50%)", color: "var(--text-tertiary)", pointerEvents: "none" }} />
+                <input type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} style={{ paddingLeft: "36px" }} />
+              </div>
             </div>
             <div className="form-group" style={{ marginBottom: 0 }}>
               <label>Nhóm theo</label>
@@ -1205,43 +1410,23 @@ function ReportsView() {
           {/* Stats summary */}
           <div className="report-stats-grid">
             <div className="report-summary-card">
-              <span style={{ fontSize: "0.82rem", color: "var(--text-secondary)" }}>Tổng doanh thu thực tế</span>
-              <p style={{ fontSize: "1.8rem", fontWeight: 700, margin: "8px 0 0 0", color: "var(--accent-secondary)" }}>
+              <span style={{ fontSize: "0.82rem", color: "var(--text-secondary)", fontWeight: 600 }}>Tổng doanh thu thực tế</span>
+              <p style={{ fontSize: "1.9rem", fontWeight: 800, margin: "8px 0 0 0", color: "var(--accent-secondary)", letterSpacing: "-0.02em" }}>
                 {parseFloat(revReport?.total_revenue || "0").toLocaleString()}đ
               </p>
             </div>
             <div className="report-summary-card">
-              <span style={{ fontSize: "0.82rem", color: "var(--text-secondary)" }}>Tổng số lượt thanh toán</span>
-              <p style={{ fontSize: "1.8rem", fontWeight: 700, margin: "8px 0 0 0" }}>
+              <span style={{ fontSize: "0.82rem", color: "var(--text-secondary)", fontWeight: 600 }}>Tổng số lượt thanh toán</span>
+              <p style={{ fontSize: "1.9rem", fontWeight: 800, margin: "8px 0 0 0", color: "var(--text-primary)", letterSpacing: "-0.02em" }}>
                 {revReport?.transaction_count || 0} giao dịch
               </p>
             </div>
           </div>
 
-          {/* CSS Chart */}
+          {/* SVG Chart */}
           <div className="chart-container">
-            <h4 style={{ marginBottom: "16px", fontWeight: 600 }}>Biểu đồ tăng trưởng</h4>
-            <div className="bar-chart">
-              {revReport?.data?.map((d: any) => {
-                const val = parseFloat(d.revenue);
-                const heightPercent = maxRevenue > 0 ? (val / maxRevenue) * 100 : 0;
-                return (
-                  <div key={d.date} className="chart-bar-wrapper">
-                    <div
-                      className="chart-bar"
-                      style={{ height: `${Math.max(heightPercent, 2)}%` }}
-                      title={`${d.date}: ${val.toLocaleString()}đ`}
-                    />
-                    <span className="chart-label">{d.date.substring(5)}</span>
-                  </div>
-                );
-              })}
-              {(!revReport?.data || revReport.data.length === 0) && (
-                <div style={{ flex: 1, textAlign: "center", color: "var(--text-secondary)", fontSize: "0.9rem" }}>
-                  Chưa có dữ liệu giao dịch trong khoảng thời gian này.
-                </div>
-              )}
-            </div>
+            <h4 style={{ marginBottom: "16px", fontWeight: 700, fontSize: "0.95rem", color: "var(--text-primary)" }}>Biểu đồ tăng trưởng</h4>
+            {renderLineChart()}
           </div>
 
           {/* Detail Table */}
