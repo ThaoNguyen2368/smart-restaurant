@@ -23,10 +23,16 @@ import {
   Bell,
   DollarSign,
   Calendar,
+  TrendingUp,
+  Grid3x3,
 } from "lucide-react";
 import { api } from "./api";
 import { useAuthStore } from "./store";
 import "./App.css";
+import MenuPerformanceView from "./views/MenuPerformanceView";
+import TrendAnalysisView from "./views/TrendAnalysisView";
+import ServiceSpeedView from "./views/ServiceSpeedView";
+import FraudDetectionView from "./views/FraudDetectionView";
 
 // ─── Helpers ───
 const getLocalDateStr = (d: Date) => {
@@ -166,7 +172,7 @@ export default function App() {
   // Kiểm tra vai trò và điều chuyển tab nếu không hợp lệ
   useEffect(() => {
     if (user && user.role === "manager") {
-      const allowed = ["dashboard", "reports", "menu"];
+      const allowed = ["dashboard", "reports", "menu", "menu-performance", "trend-analysis", "service-speed", "fraud-detection"];
       if (!allowed.includes(activeTab)) {
         setActiveTab("dashboard");
       }
@@ -296,8 +302,36 @@ export default function App() {
               </div>
             )}
           </div>
+          <div style={{ padding: "16px 0 8px 16px", fontSize: "0.8rem", color: "var(--text-secondary)", textTransform: "uppercase", letterSpacing: "1px" }}>
+            Báo cáo nâng cao
+          </div>
+          <button
+            className={`nav-item ${activeTab === "advanced-service-speed" ? "active" : ""}`}
+            onClick={() => setActiveTab("advanced-service-speed")}
+          >
+            <Activity size={18} /> Tốc độ phục vụ
+          </button>
+          <button
+            className={`nav-item ${activeTab === "fraud-detection" ? "active" : ""}`}
+            onClick={() => setActiveTab("fraud-detection")}
+          >
+            <ShieldAlert size={18} /> Cảnh báo gian lận
+          </button>
+          <button
+            className={`nav-item ${activeTab === "trend-analysis" ? "active" : ""}`}
+            onClick={() => setActiveTab("trend-analysis")}
+          >
+            <TrendingUp size={18} /> Xu hướng KPI
+          </button>
+          <button
+            className={`nav-item ${activeTab === "menu-performance" ? "active" : ""}`}
+            onClick={() => setActiveTab("menu-performance")}
+          >
+            <Grid3x3 size={18} /> Hiệu suất Menu
+          </button>
           {!isManager && (
             <>
+
               <button
                 className={`nav-item ${activeTab === "staff" ? "active" : ""}`}
                 onClick={() => setActiveTab("staff")}
@@ -331,6 +365,10 @@ export default function App() {
             {activeTab === "menu" && "Quản lý Menu Items"}
             {activeTab === "tables" && "Quản lý Sơ đồ bàn"}
             {activeTab === "reports" && "Thống kê & Báo cáo"}
+            {activeTab === "service-speed" && "Báo cáo Tốc độ Phục vụ"}
+            {activeTab === "fraud-detection" && "Cảnh báo Gian lận (Fraud Detection)"}
+            {activeTab === "trend-analysis" && "Phân tích Xu hướng KPI"}
+            {activeTab === "menu-performance" && "Phân tích Hiệu suất Menu (Menu Engineering)"}
             {activeTab === "staff" && "Quản lý Nhân sự"}
             {activeTab === "tax-config" && "Cấu hình Thuế & Phí"}
             {activeTab === "audit-logs" && "Nhật ký kiểm toán (Audit Logs)"}
@@ -415,6 +453,10 @@ export default function App() {
           {activeTab === "menu" && <MenuManager />}
           {activeTab === "tables" && !isManager && <TableManager />}
           {activeTab === "reports" && <ReportsView subTab={reportsSubTab} setSubTab={setReportsSubTab} />}
+          {activeTab === "advanced-service-speed" && <ServiceSpeedView />}
+          {activeTab === "fraud-detection" && <FraudDetectionView />}
+          {activeTab === "trend-analysis" && <TrendAnalysisView />}
+          {activeTab === "menu-performance" && <MenuPerformanceView />}
           {activeTab === "staff" && !isManager && <StaffManager />}
           {activeTab === "tax-config" && !isManager && <TaxConfigView />}
           {activeTab === "audit-logs" && !isManager && <AuditLogsView />}
