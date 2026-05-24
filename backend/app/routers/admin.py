@@ -23,45 +23,70 @@ from app.services import menu_service, session_service, kitchen_service
 router = APIRouter(prefix="/api", tags=["Admin"])
 
 
-# ─── Menu CRUD (Admin only) ───
+# ─── Menu CRUD (Admin & Manager) ───
 @router.post("/menu-items")
 def create_item(data: MenuItemCreate, current_user: StaffUser = Depends(get_current_user), db: DBSession = Depends(get_db)):
-    user = require_roles("admin")(current_user)
+    user = require_roles("admin", "manager")(current_user)
     item = menu_service.create_menu_item(db, data)
     return api_response({"id": item.id, "name": item.name, "price": str(item.price)})
 
 @router.patch("/menu-items/{item_id}")
 def update_item(item_id: int, data: MenuItemUpdate, current_user: StaffUser = Depends(get_current_user), db: DBSession = Depends(get_db)):
-    user = require_roles("admin")(current_user)
+    user = require_roles("admin", "manager")(current_user)
     item = menu_service.update_menu_item(db, item_id, data)
     return api_response({"id": item.id, "name": item.name, "price": str(item.price)})
 
 @router.get("/menu-items")
 def list_all_items(current_user: StaffUser = Depends(get_current_user), db: DBSession = Depends(get_db)):
-    user = require_roles("admin")(current_user)
+    user = require_roles("admin", "manager")(current_user)
     items = menu_service.get_all_menu_items(db)
     return api_response([
-        {"id": i.id, "category_id": i.category_id, "name": i.name, "price": str(i.price), "is_available": i.is_available}
+        {
+            "id": i.id, "category_id": i.category_id, "name": i.name,
+            "description": i.description, "price": str(i.price),
+            "image_url": i.image_url, "is_available": i.is_available,
+            "display_order": i.display_order,
+        }
         for i in items
     ])
 
+@router.patch("/menu-items/{item_id}/toggle-availability")
+def toggle_item_availability(item_id: int, current_user: StaffUser = Depends(get_current_user), db: DBSession = Depends(get_db)):
+    """Quick toggle is_available for a menu item (hide/show on menu)."""
+    user = require_roles("admin", "manager")(current_user)
+    from app.models.menu_item import MenuItem
+    item = db.query(MenuItem).filter(MenuItem.id == item_id).first()
+    if not item:
+        raise HTTPException(status_code=404, detail="Menu item not found")
+    item.is_available = not item.is_available
+    db.commit()
+    db.refresh(item)
+    return api_response({"id": item.id, "name": item.name, "is_available": item.is_available})
 
-# ─── Category CRUD (Admin only) ───
+
+# ─── Category CRUD (Admin & Manager) ───
+@router.get("/categories")
+def list_categories(current_user: StaffUser = Depends(get_current_user), db: DBSession = Depends(get_db)):
+    user = require_roles("admin", "manager")(current_user)
+    from app.models.category import Category
+    cats = db.query(Category).order_by(Category.display_order).all()
+    return api_response([{"id": c.id, "name": c.name, "display_order": c.display_order} for c in cats])
+
 @router.post("/categories")
 def create_cat(data: CategoryCreate, current_user: StaffUser = Depends(get_current_user), db: DBSession = Depends(get_db)):
-    user = require_roles("admin")(current_user)
+    user = require_roles("admin", "manager")(current_user)
     cat = menu_service.create_category(db, data)
     return api_response({"id": cat.id, "name": cat.name})
 
 @router.patch("/categories/{cat_id}")
 def update_cat(cat_id: int, data: CategoryUpdate, current_user: StaffUser = Depends(get_current_user), db: DBSession = Depends(get_db)):
-    user = require_roles("admin")(current_user)
+    user = require_roles("admin", "manager")(current_user)
     cat = menu_service.update_category(db, cat_id, data)
     return api_response({"id": cat.id, "name": cat.name})
 
 @router.delete("/categories/{cat_id}")
 def delete_cat(cat_id: int, current_user: StaffUser = Depends(get_current_user), db: DBSession = Depends(get_db)):
-    user = require_roles("admin")(current_user)
+    user = require_roles("admin", "manager")(current_user)
     menu_service.delete_category(db, cat_id)
     return api_response({"message": "Category deleted"})
 

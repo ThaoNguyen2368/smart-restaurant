@@ -229,6 +229,10 @@ export default function Dashboard() {
           } else if (data.event === "NEW_ORDER") {
             addToast(`Nhận đơn hàng mới từ bàn ${data.payload.table_id}!`, "info");
             fetchData();
+          } else if (data.event === "OUT_OF_STOCK") {
+            const payload = data.payload as { item_id: number; item_name: string };
+            addToast(`THÔNG BÁO KHẨN: Nhà bếp báo HẾT MÓN "${payload.item_name}"! Vui lòng huỷ món này khỏi các bàn phục vụ chưa nấu xong.`, "error");
+            fetchData();
           }
         } catch {
           return;

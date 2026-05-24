@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import {
   LayoutDashboard,
   Utensils,
@@ -14,6 +14,11 @@ import {
   Activity,
   ShieldAlert,
   X,
+  Eye,
+  EyeOff,
+  Trash2,
+  Search,
+  Filter,
 } from "lucide-react";
 import { api } from "./api";
 import { useAuthStore } from "./store";
@@ -32,8 +37,11 @@ interface MenuItem {
   id: number;
   category_id: number;
   name: string;
+  description?: string;
   price: string;
+  image_url?: string;
   is_available: boolean;
+  display_order: number;
 }
 
 interface Category {
@@ -60,10 +68,64 @@ export default function App() {
   const [password, setPassword] = useState("");
   const [authError, setAuthError] = useState("");
 
+  // Toast Notification State
+  interface Toast {
+    id: number;
+    message: string;
+    type: "success" | "warning" | "info" | "error";
+  }
+  const [toasts, setToasts] = useState<Toast[]>([]);
+  const nextToastId = useRef(0);
+
+  const addToast = (message: string, type: Toast["type"] = "info") => {
+    const id = nextToastId.current++;
+    setToasts((prev) => [...prev, { id, message, type }]);
+    setTimeout(() => {
+      setToasts((prev) => prev.filter((t) => t.id !== id));
+    }, 5000);
+  };
+
+  // WebSocket for Urgent Notifications (OUT_OF_STOCK)
+  useEffect(() => {
+    if (!token) return;
+
+    const base = import.meta.env.VITE_API_URL || "http://localhost:8000/api";
+    const wsBase = base.replace("http", "ws").replace(/\/api\/?$/, "");
+    let ws: WebSocket | null = null;
+    
+    try {
+      ws = new WebSocket(`${wsBase}/ws/staff?token=${token}`);
+
+      ws.onmessage = (event) => {
+        try {
+          const data = JSON.parse(event.data);
+          if (data.event === "OUT_OF_STOCK") {
+            const payload = data.payload as { item_id: number; item_name: string };
+            addToast(`THÔNG BÁO KHẨN: Nhà bếp báo HẾT MÓN "${payload.item_name}"! Hệ thống đã tự động ẩn món trên menu trang chủ.`, "error");
+            
+            // Dispatch custom event to notify MenuManager component to refetch
+            const customEvent = new CustomEvent("menu-item-out-of-stock", { detail: payload });
+            window.dispatchEvent(customEvent);
+          }
+        } catch (err) {
+          console.error("WS error parsing message:", err);
+        }
+      };
+
+      ws.onerror = (err) => console.error("WS connection error:", err);
+    } catch (err) {
+      console.error("WS initialization failed:", err);
+    }
+
+    return () => {
+      ws?.close();
+    };
+  }, [token]);
+
   // Kiểm tra vai trò và điều chuyển tab nếu không hợp lệ
   useEffect(() => {
     if (user && user.role === "manager") {
-      const allowed = ["dashboard", "reports"];
+      const allowed = ["dashboard", "reports", "menu"];
       if (!allowed.includes(activeTab)) {
         setActiveTab("dashboard");
       }
@@ -135,22 +197,23 @@ export default function App() {
           >
             <LayoutDashboard size={18} /> Dashboard
           </button>
+          
+          <button
+            className={`nav-item ${activeTab === "menu" ? "active" : ""}`}
+            onClick={() => setActiveTab("menu")}
+          >
+            <Utensils size={18} /> Món ăn & Menu
+          </button>
+
           {!isManager && (
-            <>
-              <button
-                className={`nav-item ${activeTab === "menu" ? "active" : ""}`}
-                onClick={() => setActiveTab("menu")}
-              >
-                <Utensils size={18} /> Món ăn & Menu
-              </button>
-              <button
-                className={`nav-item ${activeTab === "tables" ? "active" : ""}`}
-                onClick={() => setActiveTab("tables")}
-              >
-                <TableIcon size={18} /> Sơ đồ bàn
-              </button>
-            </>
+            <button
+              className={`nav-item ${activeTab === "tables" ? "active" : ""}`}
+              onClick={() => setActiveTab("tables")}
+            >
+              <TableIcon size={18} /> Sơ đồ bàn
+            </button>
           )}
+
           <button
             className={`nav-item ${activeTab === "reports" ? "active" : ""}`}
             onClick={() => setActiveTab("reports")}
@@ -211,7 +274,7 @@ export default function App() {
 
         <section className="admin-content">
           {activeTab === "dashboard" && <DashboardView />}
-          {activeTab === "menu" && !isManager && <MenuManager />}
+          {activeTab === "menu" && <MenuManager />}
           {activeTab === "tables" && !isManager && <TableManager />}
           {activeTab === "reports" && <ReportsView />}
           {activeTab === "staff" && !isManager && <StaffManager />}
@@ -219,6 +282,22 @@ export default function App() {
           {activeTab === "audit-logs" && !isManager && <AuditLogsView />}
         </section>
       </main>
+
+      {/* Toasts Container */}
+      <div className="toast-container">
+        {toasts.map((t) => (
+          <div key={t.id} className={`toast-card glass ${t.type} animate-slide-in`}>
+            <div className="toast-content">
+              {t.type === "error" && <ShieldAlert size={18} style={{ color: "var(--accent-danger)" }} />}
+              {t.type === "warning" && <ShieldAlert size={18} style={{ color: "var(--accent-secondary)" }} />}
+              <span className="toast-message">{t.message}</span>
+            </div>
+            <button className="toast-close-btn" onClick={() => setToasts((prev) => prev.filter((item) => item.id !== t.id))}>
+              <X size={14} />
+            </button>
+          </div>
+        ))}
+      </div>
     </div>
   );
 }
@@ -293,26 +372,37 @@ function DashboardView() {
   );
 }
 
-// 2. Menu Manager (Admin Only)
+// 2. Menu Manager (Admin Only) — Enhanced with toggle, search, filter, description
 function MenuManager() {
   const [items, setItems] = useState<MenuItem[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
   const [loading, setLoading] = useState(true);
+  const [toggling, setToggling] = useState<number | null>(null);
+
+  // Filter & Search State
+  const [searchQuery, setSearchQuery] = useState("");
+  const [filterAvailability, setFilterAvailability] = useState<"all" | "available" | "hidden">("all");
+  const [filterCategoryId, setFilterCategoryId] = useState<number | null>(null);
 
   // Modal State
   const [showModal, setShowModal] = useState(false);
   const [editItem, setEditItem] = useState<MenuItem | null>(null);
   const [itemName, setItemName] = useState("");
+  const [itemDescription, setItemDescription] = useState("");
   const [itemPrice, setItemPrice] = useState("");
   const [itemCategoryId, setItemCategoryId] = useState("");
   const [itemAvailable, setItemAvailable] = useState(true);
+  const [itemDisplayOrder, setItemDisplayOrder] = useState("0");
+
+  // Delete confirmation
+  const [deleteTarget, setDeleteTarget] = useState<MenuItem | null>(null);
 
   const fetchItems = () => {
     setLoading(true);
-    Promise.all([api.get("/menu-items"), api.get("/menu")])
-      .then(([itemRes, menuRes]) => {
+    Promise.all([api.get("/menu-items"), api.get("/categories")])
+      .then(([itemRes, catRes]) => {
         setItems(itemRes.data.data);
-        setCategories(menuRes.data.data?.categories || []);
+        setCategories(catRes.data.data || []);
       })
       .catch((err) => console.error(err))
       .finally(() => setLoading(false));
@@ -320,23 +410,50 @@ function MenuManager() {
 
   useEffect(() => {
     fetchItems();
+
+    const handleOutOfStock = () => {
+      fetchItems();
+    };
+    window.addEventListener("menu-item-out-of-stock", handleOutOfStock);
+    return () => {
+      window.removeEventListener("menu-item-out-of-stock", handleOutOfStock);
+    };
   }, []);
+
+  // Filtered items
+  const filteredItems = items.filter((item) => {
+    if (filterAvailability === "available" && !item.is_available) return false;
+    if (filterAvailability === "hidden" && item.is_available) return false;
+    if (filterCategoryId !== null && item.category_id !== filterCategoryId) return false;
+    if (searchQuery.trim()) {
+      const q = searchQuery.toLowerCase();
+      return item.name.toLowerCase().includes(q) || (item.description || "").toLowerCase().includes(q);
+    }
+    return true;
+  });
+
+  const availableCount = items.filter(i => i.is_available).length;
+  const hiddenCount = items.filter(i => !i.is_available).length;
 
   const openAddModal = () => {
     setEditItem(null);
     setItemName("");
+    setItemDescription("");
     setItemPrice("");
     setItemCategoryId(categories[0]?.id.toString() || "");
     setItemAvailable(true);
+    setItemDisplayOrder("0");
     setShowModal(true);
   };
 
   const openEditModal = (item: MenuItem) => {
     setEditItem(item);
     setItemName(item.name);
+    setItemDescription(item.description || "");
     setItemPrice(item.price);
     setItemCategoryId(item.category_id.toString());
     setItemAvailable(item.is_available);
+    setItemDisplayOrder(item.display_order?.toString() || "0");
     setShowModal(true);
   };
 
@@ -345,9 +462,11 @@ function MenuManager() {
     try {
       const payload = {
         name: itemName,
+        description: itemDescription || undefined,
         price: parseFloat(itemPrice),
         category_id: parseInt(itemCategoryId),
         is_available: itemAvailable,
+        display_order: parseInt(itemDisplayOrder) || 0,
       };
 
       if (editItem) {
@@ -362,6 +481,29 @@ function MenuManager() {
     }
   };
 
+  const handleToggleAvailability = async (item: MenuItem) => {
+    try {
+      setToggling(item.id);
+      await api.patch(`/menu-items/${item.id}/toggle-availability`);
+      fetchItems();
+    } catch (err: any) {
+      alert("Lỗi khi chuyển đổi trạng thái: " + (err.response?.data?.detail || err.message));
+    } finally {
+      setToggling(null);
+    }
+  };
+
+  const handleSoftDelete = async () => {
+    if (!deleteTarget) return;
+    try {
+      await api.patch(`/menu-items/${deleteTarget.id}`, { is_available: false });
+      setDeleteTarget(null);
+      fetchItems();
+    } catch (err: any) {
+      alert("Lỗi khi ẩn món ăn: " + (err.response?.data?.detail || err.message));
+    }
+  };
+
   if (loading) {
     return (
       <div style={{ display: "flex", justifyContent: "center", padding: "40px 0" }}>
@@ -371,52 +513,189 @@ function MenuManager() {
   }
 
   return (
-    <div className="glass table-container animate-fade-in">
-      <div className="table-header">
-        <h2 style={{ fontWeight: 700 }}>Danh sách Món ăn</h2>
+    <div className="animate-fade-in" style={{ display: "flex", flexDirection: "column", gap: "20px" }}>
+      {/* Stats Cards */}
+      <div className="menu-stats-row">
+        <div className="menu-stat-card glass">
+          <Utensils size={20} style={{ color: "var(--accent-primary)" }} />
+          <div>
+            <span className="menu-stat-label">Tổng cộng</span>
+            <span className="menu-stat-value">{items.length} món</span>
+          </div>
+        </div>
+        <div className="menu-stat-card glass">
+          <Eye size={20} style={{ color: "var(--accent-secondary)" }} />
+          <div>
+            <span className="menu-stat-label">Đang bán</span>
+            <span className="menu-stat-value" style={{ color: "var(--accent-secondary)" }}>{availableCount} món</span>
+          </div>
+        </div>
+        <div className="menu-stat-card glass">
+          <EyeOff size={20} style={{ color: "var(--accent-danger)" }} />
+          <div>
+            <span className="menu-stat-label">Đã ẩn</span>
+            <span className="menu-stat-value" style={{ color: "var(--accent-danger)" }}>{hiddenCount} món</span>
+          </div>
+        </div>
+      </div>
+
+      {/* Search & Filter Bar */}
+      <div className="menu-toolbar glass">
+        <div className="menu-search-box">
+          <Search size={16} style={{ color: "var(--text-secondary)" }} />
+          <input
+            type="text"
+            placeholder="Tìm kiếm món ăn..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            className="menu-search-input"
+          />
+        </div>
+        <div className="menu-filter-group">
+          <Filter size={14} style={{ color: "var(--text-secondary)" }} />
+          <button
+            className={`menu-filter-btn ${filterAvailability === "all" ? "active" : ""}`}
+            onClick={() => setFilterAvailability("all")}
+          >
+            Tất cả ({items.length})
+          </button>
+          <button
+            className={`menu-filter-btn ${filterAvailability === "available" ? "active" : ""}`}
+            onClick={() => setFilterAvailability("available")}
+          >
+            Đang bán ({availableCount})
+          </button>
+          <button
+            className={`menu-filter-btn ${filterAvailability === "hidden" ? "active" : ""}`}
+            onClick={() => setFilterAvailability("hidden")}
+          >
+            Đã ẩn ({hiddenCount})
+          </button>
+        </div>
         <button className="btn btn-primary" onClick={openAddModal}>
           <Plus size={16} /> Thêm món mới
         </button>
       </div>
-      <table>
-        <thead>
-          <tr>
-            <th>Mã món</th>
-            <th>Tên món</th>
-            <th>Danh mục</th>
-            <th>Đơn giá</th>
-            <th>Trạng thái bán</th>
-            <th>Thao tác</th>
-          </tr>
-        </thead>
-        <tbody>
-          {items.map((item) => {
-            const cat = categories.find((c) => c.id === item.category_id);
-            return (
-              <tr key={item.id}>
-                <td>#{item.id}</td>
-                <td style={{ fontWeight: 600 }}>{item.name}</td>
-                <td>{cat ? cat.name : `Danh mục #${item.category_id}`}</td>
-                <td>{Number(item.price).toLocaleString()}đ</td>
-                <td>
-                  <span className={`badge ${item.is_available ? "success" : "danger"}`}>
-                    {item.is_available ? "Còn món" : "Hết món"}
-                  </span>
-                </td>
-                <td>
-                  <div className="actions">
-                    <button className="btn-icon" onClick={() => openEditModal(item)}>
-                      <Edit size={14} />
-                    </button>
-                  </div>
+
+      {/* Category Filter Chips */}
+      {categories.length > 0 && (
+        <div className="menu-category-chips">
+          <button
+            className={`menu-chip ${filterCategoryId === null ? "active" : ""}`}
+            onClick={() => setFilterCategoryId(null)}
+          >
+            Tất cả danh mục
+          </button>
+          {categories.map((c) => (
+            <button
+              key={c.id}
+              className={`menu-chip ${filterCategoryId === c.id ? "active" : ""}`}
+              onClick={() => setFilterCategoryId(filterCategoryId === c.id ? null : c.id)}
+            >
+              {c.name}
+            </button>
+          ))}
+        </div>
+      )}
+
+      {/* Items Table */}
+      <div className="glass table-container">
+        <div className="table-header">
+          <h2 style={{ fontWeight: 700 }}>Danh sách Món ăn</h2>
+          <span style={{ fontSize: "0.85rem", color: "var(--text-secondary)" }}>
+            Hiển thị {filteredItems.length} / {items.length} món
+          </span>
+        </div>
+        <table>
+          <thead>
+            <tr>
+              <th>Mã</th>
+              <th>Tên món</th>
+              <th>Danh mục</th>
+              <th>Mô tả</th>
+              <th>Đơn giá</th>
+              <th>Trạng thái</th>
+              <th style={{ textAlign: "center" }}>Thao tác</th>
+            </tr>
+          </thead>
+          <tbody>
+            {filteredItems.map((item) => {
+              const cat = categories.find((c) => c.id === item.category_id);
+              const isHidden = !item.is_available;
+              return (
+                <tr key={item.id} className={isHidden ? "row-hidden-item" : ""}>
+                  <td style={{ fontWeight: 600, opacity: isHidden ? 0.5 : 1 }}>#{item.id}</td>
+                  <td>
+                    <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                      <span style={{ fontWeight: 600, opacity: isHidden ? 0.5 : 1 }}>{item.name}</span>
+                      {isHidden && (
+                        <span className="badge-hidden-tag">
+                          <EyeOff size={10} /> Đã ẩn
+                        </span>
+                      )}
+                    </div>
+                  </td>
+                  <td style={{ opacity: isHidden ? 0.5 : 1 }}>{cat ? cat.name : `#${item.category_id}`}</td>
+                  <td style={{ opacity: isHidden ? 0.5 : 1, maxWidth: "200px" }}>
+                    <span style={{ fontSize: "0.85rem", color: "var(--text-secondary)", display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden" }}>
+                      {item.description || "—"}
+                    </span>
+                  </td>
+                  <td style={{ fontWeight: 600, opacity: isHidden ? 0.5 : 1 }}>
+                    {Number(item.price).toLocaleString()}đ
+                  </td>
+                  <td>
+                    <span className={`badge ${item.is_available ? "success" : "danger"}`}>
+                      {item.is_available ? "Còn món" : "Hết món"}
+                    </span>
+                  </td>
+                  <td>
+                    <div className="actions" style={{ justifyContent: "center" }}>
+                      <button
+                        className={`btn-toggle-avail ${item.is_available ? "btn-hide" : "btn-show"}`}
+                        onClick={() => handleToggleAvailability(item)}
+                        disabled={toggling === item.id}
+                        title={item.is_available ? "Ẩn khỏi menu (hết món)" : "Hiện lại trên menu (có món)"}
+                      >
+                        {toggling === item.id ? (
+                          <Loader2 className="animate-spin" size={14} />
+                        ) : item.is_available ? (
+                          <><EyeOff size={14} /> Ẩn</>
+                        ) : (
+                          <><Eye size={14} /> Hiện</>
+                        )}
+                      </button>
+                      <button className="btn-icon" onClick={() => openEditModal(item)} title="Chỉnh sửa">
+                        <Edit size={14} />
+                      </button>
+                      {item.is_available && (
+                        <button
+                          className="btn-icon danger"
+                          onClick={() => setDeleteTarget(item)}
+                          title="Ẩn món ăn (soft delete)"
+                        >
+                          <Trash2 size={14} />
+                        </button>
+                      )}
+                    </div>
+                  </td>
+                </tr>
+              );
+            })}
+            {filteredItems.length === 0 && (
+              <tr>
+                <td colSpan={7} style={{ textAlign: "center", padding: "40px", color: "var(--text-secondary)" }}>
+                  {searchQuery || filterAvailability !== "all" || filterCategoryId !== null
+                    ? "Không tìm thấy món ăn phù hợp với bộ lọc."
+                    : "Chưa có món ăn nào. Hãy thêm món mới!"}
                 </td>
               </tr>
-            );
-          })}
-        </tbody>
-      </table>
+            )}
+          </tbody>
+        </table>
+      </div>
 
-      {/* Modal Form */}
+      {/* Create/Edit Modal */}
       {showModal && (
         <div className="modal-overlay">
           <div className="modal-container glass animate-fade-in">
@@ -438,34 +717,57 @@ function MenuManager() {
                 />
               </div>
               <div className="form-group">
-                <label>Đơn giá (VNĐ)</label>
-                <input
-                  type="number"
-                  value={itemPrice}
-                  onChange={(e) => setItemPrice(e.target.value)}
-                  placeholder="Ví dụ: 45000"
-                  required
+                <label>Mô tả (tuỳ chọn)</label>
+                <textarea
+                  value={itemDescription}
+                  onChange={(e) => setItemDescription(e.target.value)}
+                  placeholder="Mô tả ngắn về món ăn, nguyên liệu, cách chế biến..."
+                  rows={3}
+                  className="menu-textarea"
                 />
               </div>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "16px" }}>
+                <div className="form-group">
+                  <label>Đơn giá (VNĐ)</label>
+                  <input
+                    type="number"
+                    value={itemPrice}
+                    onChange={(e) => setItemPrice(e.target.value)}
+                    placeholder="Ví dụ: 45000"
+                    required
+                    min="0"
+                  />
+                </div>
+                <div className="form-group">
+                  <label>Danh mục</label>
+                  <select value={itemCategoryId} onChange={(e) => setItemCategoryId(e.target.value)} required>
+                    {categories.map((c) => (
+                      <option key={c.id} value={c.id}>
+                        {c.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
               <div className="form-group">
-                <label>Danh mục</label>
-                <select value={itemCategoryId} onChange={(e) => setItemCategoryId(e.target.value)} required>
-                  {categories.map((c) => (
-                    <option key={c.id} value={c.id}>
-                      {c.name}
-                    </option>
-                  ))}
-                </select>
+                <label>Thứ tự hiển thị</label>
+                <input
+                  type="number"
+                  value={itemDisplayOrder}
+                  onChange={(e) => setItemDisplayOrder(e.target.value)}
+                  placeholder="0"
+                  min="0"
+                />
               </div>
               <div className="form-group" style={{ flexDirection: "row", alignItems: "center", gap: "10px", marginTop: "10px" }}>
                 <input
                   type="checkbox"
-                  id="is_available"
+                  id="menu_is_available"
                   checked={itemAvailable}
                   onChange={(e) => setItemAvailable(e.target.checked)}
                   style={{ width: "18px", height: "18px", margin: 0 }}
                 />
-                <label htmlFor="is_available" style={{ cursor: "pointer", userSelect: "none" }}>Mở bán món ăn này</label>
+                <label htmlFor="menu_is_available" style={{ cursor: "pointer", userSelect: "none" }}>Mở bán món ăn này</label>
               </div>
               <div style={{ display: "flex", justifyContent: "flex-end", gap: "12px", marginTop: "32px" }}>
                 <button type="button" className="btn btn-secondary" onClick={() => setShowModal(false)}>
@@ -476,6 +778,34 @@ function MenuManager() {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* Delete Confirmation Modal */}
+      {deleteTarget && (
+        <div className="modal-overlay">
+          <div className="modal-container glass animate-fade-in" style={{ maxWidth: "420px", textAlign: "center" }}>
+            <div className="delete-confirm-icon">
+              <EyeOff size={32} />
+            </div>
+            <h3 style={{ marginBottom: "12px", fontWeight: 700 }}>Ẩn món "{deleteTarget.name}"?</h3>
+            <p style={{ color: "var(--text-secondary)", fontSize: "0.9rem", marginBottom: "28px", lineHeight: "1.6" }}>
+              Món ăn sẽ bị ẩn khỏi menu khách hàng.<br />
+              Bạn có thể bật lại bất cứ lúc nào bằng nút <strong>"Hiện"</strong>.
+            </p>
+            <div style={{ display: "flex", justifyContent: "center", gap: "12px" }}>
+              <button className="btn btn-secondary" onClick={() => setDeleteTarget(null)}>
+                Huỷ
+              </button>
+              <button
+                className="btn"
+                style={{ background: "var(--accent-danger)", color: "white" }}
+                onClick={handleSoftDelete}
+              >
+                <EyeOff size={16} /> Xác nhận ẩn
+              </button>
+            </div>
           </div>
         </div>
       )}
