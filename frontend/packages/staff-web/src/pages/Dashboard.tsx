@@ -123,6 +123,21 @@ export default function Dashboard() {
     }
   });
 
+  // --- BANNER ĐẾM NGƯỢC HẾT MÓN (1:30) ---
+  interface OutOfStockBanner {
+    id: number;          // unique id để dismiss
+    item_id: number;
+    item_name: string;
+    secondsLeft: number; // đếm ngược từ 90
+    escalated: boolean;  // đã escalate lên Manager chưa
+  }
+  const [outOfStockBanners, setOutOfStockBanners] = useState<OutOfStockBanner[]>([]);
+  const bannerIdRef = useRef(0);
+  
+  // State phục vụ việc Đổi món (Substitute)
+  const [menuItems, setMenuItems] = useState<MenuItem[]>([]);
+  const [substitutingDetail, setSubstitutingDetail] = useState<any | null>(null);
+
   useEffect(() => {
     localStorage.setItem("pending_cancel_requests", JSON.stringify(pendingCancelRequests));
   }, [pendingCancelRequests]);
@@ -130,6 +145,7 @@ export default function Dashboard() {
   /* Filters */
   const [capacityFilter, setCapacityFilter] = useState<"all" | number>("all");
   const [searchQuery, setSearchQuery] = useState("");
+  const [itemFilterQuery, setItemFilterQuery] = useState("");
 
   /* Side panel */
   const [selectedTable, setSelectedTable] = useState<Table | null>(null);
@@ -153,6 +169,27 @@ export default function Dashboard() {
     logout();
     navigate("/login");
   };
+
+  /* ---- Countdown tick cho out-of-stock banners ---- */
+  useEffect(() => {
+    if (outOfStockBanners.length === 0) return;
+    const tick = setInterval(() => {
+      setOutOfStockBanners((prev) =>
+        prev
+          .map((b) => {
+            const next = b.secondsLeft - 1;
+            // Khi hết 1:30 và chưa escalate → đánh dấu escalated
+            if (next <= 0 && !b.escalated) {
+              return { ...b, secondsLeft: 0, escalated: true };
+            }
+            return { ...b, secondsLeft: Math.max(0, next) };
+          })
+          // Xóa banner hoàn toàn sau thêm 5 giây kể từ khi escalate
+          .filter((b) => b.secondsLeft > 0 || !b.escalated)
+      );
+    }, 1000);
+    return () => clearInterval(tick);
+  }, [outOfStockBanners.length]);
 
   /* ---- Clock tick ---- */
   useEffect(() => {
@@ -190,13 +227,22 @@ export default function Dashboard() {
 
     const token = localStorage.getItem("staff_token");
     let ws: WebSocket | null = null;
-    if (token) {
+    let reconnectTimeout: any = null;
+
+    const connectWs = () => {
+      if (!token) return;
+
       const base = import.meta.env.VITE_API_URL || "http://localhost:8000/api";
       const wsBase = base.replace("http", "ws").replace(/\/api\/?$/, "");
+      
       ws = new WebSocket(`${wsBase}/ws/staff?token=${token}`);
 
       ws.onopen = () => setWsState("connected");
-      ws.onclose = () => setWsState("disconnected");
+      ws.onclose = () => {
+        setWsState("disconnected");
+        // Auto-reconnect after 3 seconds
+        reconnectTimeout = setTimeout(connectWs, 3000);
+      };
       ws.onerror = () => setWsState("disconnected");
 
       ws.onmessage = (event) => {
@@ -229,15 +275,27 @@ export default function Dashboard() {
           } else if (data.event === "NEW_ORDER") {
             addToast(`Nhận đơn hàng mới từ bàn ${data.payload.table_id}!`, "info");
             fetchData();
+          } else if (data.event === "OUT_OF_STOCK") {
+            const payload = data.payload as { item_id: number; item_name: string };
+            // Thêm countdown banner 1:30 (BR-009 v2.1)
+            const bannerId = bannerIdRef.current++;
+            setOutOfStockBanners((prev) => [
+              ...prev.filter((b) => b.item_id !== payload.item_id), // Tránh duplicate
+              { id: bannerId, item_id: payload.item_id, item_name: payload.item_name, secondsLeft: 90, escalated: false },
+            ]);
+            fetchData();
           }
         } catch {
           return;
         }
       };
-    }
+    };
+
+    connectWs();
 
     return () => {
       clearInterval(interval);
+      if (reconnectTimeout) clearTimeout(reconnectTimeout);
       ws?.close();
     };
   }, [user]);
@@ -265,6 +323,7 @@ export default function Dashboard() {
     try {
       const res = await api.get("/menu");
       const items: MenuItem[] = res.data.data?.items || [];
+      setMenuItems(items);
       const map = Object.fromEntries(items.map((item) => [item.id, item.name]));
       setMenuItemMap(map);
     } catch (err: any) {
@@ -288,7 +347,7 @@ export default function Dashboard() {
           setPendingCancelRequests((prev) => {
             return prev.filter((req) => {
               const matched = details.find((d) => d.id === req.order_detail_id);
-              if (!matched || matched.cooking_status !== "cooking") {
+              if (matched && matched.cooking_status !== "cooking") {
                 return false;
               }
               return true;
@@ -375,21 +434,47 @@ export default function Dashboard() {
   };
 
   const handleCancelDetail = async (detailId: number, status: string, tableId: number, tableNumber: number) => {
+    // BR-003 v2.1: Chỉ cho phép huỷ khi status = pending hoặc confirmed
+    if (!['pending', 'confirmed'].includes(status)) {
+      alert(`Không thể huỷ món đang ở trạng thái "${status}". Chỉ được huỷ khi món ở trạng thái Chờ xử lý hoặc Đã nhận.`);
+      return;
+    }
     const reason = prompt("Nhập lý do huỷ món:");
     if (reason === null) return;
     if (!reason.trim()) { alert("Lý do huỷ không được trống."); return; }
     try {
-      if (status === "cooking") {
-        await api.post(`/order-details/${detailId}/cancel-request`, { cancel_reason: reason });
-        addToast("Đã gửi đề xuất huỷ lên Quản lý!", "info");
-      } else {
-        await api.patch(`/order-details/${detailId}/cancel`, { cancel_reason: reason });
-        addToast("Món đã được huỷ bỏ!", "success");
-      }
+      await api.patch(`/order-details/${detailId}/cancel`, { cancel_reason: reason });
+      addToast("Món đã được huỷ bỏ!", "success");
       await loadTableProgress(tableId, tableNumber);
       fetchData();
     } catch (err: any) {
-      alert(err.response?.data?.detail?.message || "Lỗi thao tác huỷ món");
+      alert(err.response?.data?.detail?.message || err.response?.data?.detail || "Lỗi thao tác huỷ món");
+    }
+  };
+
+  const handleRequestCancelDetail = async (detailId: number, tableId: number, tableNumber: number) => {
+    const reason = prompt("Món ăn này đang được chế biến. Nhập lý do yêu cầu huỷ món (cần Quản lý duyệt):");
+    if (reason === null) return;
+    if (!reason.trim()) { alert("Lý do huỷ không được trống."); return; }
+    try {
+      const res = await api.post(`/order-details/${detailId}/cancel-request`, { cancel_reason: reason });
+      addToast(res.data?.message || "Đã gửi yêu cầu huỷ món đang nấu tới Quản lý!", "info");
+      await loadTableProgress(tableId, tableNumber);
+      fetchData();
+    } catch (err: any) {
+      alert(err.response?.data?.detail?.message || err.response?.data?.detail || "Lỗi gửi yêu cầu huỷ món");
+    }
+  };
+
+  const handleSubstituteDetail = async (detailId: number, newItemId: number, tableId: number, tableNumber: number) => {
+    try {
+      await api.patch(`/order-details/${detailId}/substitute`, { new_item_id: newItemId });
+      addToast("Đổi món thành công!", "success");
+      setSubstitutingDetail(null);
+      await loadTableProgress(tableId, tableNumber);
+      fetchData();
+    } catch (err: any) {
+      alert(err.response?.data?.detail?.message || err.response?.data?.detail || "Lỗi thao tác đổi món");
     }
   };
 
@@ -471,6 +556,26 @@ export default function Dashboard() {
     const occupied = filteredTables.filter((t) => t.status !== "empty").length;
     return { empty, occupied };
   }, [filteredTables]);
+
+  const detailedTables = useMemo(() => {
+    return tables
+      .filter((t) => t.status !== "empty")
+      .map((t) => {
+        const invoice = tableActiveInvoices[t.id];
+        const activeDetails = invoice?.details?.filter((d: any) => d.cooking_status !== "cancelled") || [];
+        return { table: t, invoice, activeDetails };
+      });
+  }, [tables, tableActiveInvoices]);
+
+  const filteredDetailedTables = useMemo(() => {
+    if (!itemFilterQuery.trim()) return detailedTables;
+    const query = itemFilterQuery.toLowerCase().trim();
+    return detailedTables.filter((dt) =>
+      dt.activeDetails.some((d: any) =>
+        d.item_name?.toLowerCase().includes(query)
+      )
+    );
+  }, [detailedTables, itemFilterQuery]);
 
   const getTableServedStats = (tableId: number) => {
     const invoiceData = tableActiveInvoices[tableId];
@@ -667,6 +772,70 @@ export default function Dashboard() {
             </div>
           </div>
         )}
+
+        {/* ========== OUT-OF-STOCK COUNTDOWN BANNERS (BR-009 v2.1) ========== */}
+        {outOfStockBanners.map((banner) => {
+          const mins = Math.floor(banner.secondsLeft / 60);
+          const secs = banner.secondsLeft % 60;
+          const countdownStr = `${mins}:${String(secs).padStart(2, "0")}`;
+          const isUrgent = banner.secondsLeft <= 30;
+          const isEscalated = banner.escalated;
+          return (
+            <div
+              key={banner.id}
+              className="glass animate-fade-in"
+              style={{
+                padding: "14px 20px",
+                borderRadius: "var(--border-radius-md)",
+                marginBottom: "10px",
+                borderLeft: `4px solid ${isEscalated ? "#ff2d55" : isUrgent ? "#ff9500" : "#ff4757"}`,
+                background: isEscalated ? "rgba(255,45,85,0.1)" : isUrgent ? "rgba(255,149,0,0.08)" : "rgba(255,71,87,0.06)",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+                gap: "16px",
+              }}
+            >
+              <div style={{ display: "flex", alignItems: "center", gap: "12px", flex: 1 }}>
+                <AlertCircle size={20} style={{ color: isEscalated ? "#ff2d55" : "#ff4757", flexShrink: 0 }} />
+                <div>
+                  <strong style={{ color: isEscalated ? "#ff2d55" : "var(--text-primary)", fontSize: "0.95rem" }}>
+                    {isEscalated
+                      ? `⚠️ KHẨN: Chưa xử lý hết món "${banner.item_name}" — Đã báo lên Manager`
+                      : `🔴 Nhà bếp báo HẾT MÓN: "${banner.item_name}"`}
+                  </strong>
+                  <p style={{ margin: 0, fontSize: "0.82rem", color: "var(--text-secondary)", marginTop: "2px" }}>
+                    {isEscalated
+                      ? "Vui lòng liên hệ Manager để xử lý."
+                      : "Vui lòng liên hệ khách tại bàn có món này và xử lý (đổi/huỷ)."}
+                  </p>
+                </div>
+              </div>
+              <div style={{ display: "flex", alignItems: "center", gap: "16px", flexShrink: 0 }}>
+                {!isEscalated && (
+                  <div style={{
+                    fontFamily: "monospace",
+                    fontWeight: 800,
+                    fontSize: "1.4rem",
+                    color: isUrgent ? "#ff9500" : "#ff4757",
+                    minWidth: "56px",
+                    textAlign: "center",
+                    letterSpacing: "2px",
+                  }}>
+                    {countdownStr}
+                  </div>
+                )}
+                <button
+                  style={{ background: "none", border: "none", cursor: "pointer", color: "var(--text-tertiary)", padding: "4px" }}
+                  onClick={() => setOutOfStockBanners((prev) => prev.filter((b) => b.id !== banner.id))}
+                  title="Đóng thông báo"
+                >
+                  ✕
+                </button>
+              </div>
+            </div>
+          );
+        })}
 
         {/* ========== TAB: TABLES ========== */}
         {activeTab === "tables" && (
@@ -877,16 +1046,154 @@ export default function Dashboard() {
 
         {/* ========== TAB: DETAILS ========== */}
         {activeTab === "details" && (
-          <div className="animate-fade-in" style={{ maxWidth: "900px" }}>
-            <div className="glass" style={{ padding: "40px 20px", textAlign: "center", borderRadius: "var(--border-radius-lg)" }}>
-              <Info size={48} style={{ color: "var(--accent-primary)", opacity: 0.4, marginBottom: "16px" }} />
-              <h3 style={{ margin: 0, fontWeight: 600 }}>Thông tin chi tiết các bàn</h3>
-              <p style={{ color: "var(--text-secondary)", fontSize: "0.9rem", marginTop: "4px" }}>
-                Nhấn vào từng bàn ở Sơ đồ bàn để xem thông tin chi tiết.
-              </p>
-              <button className="btn btn-primary" style={{ marginTop: "20px" }} onClick={() => setActiveTab("tables")}>
-                Quay lại Sơ đồ bàn
-              </button>
+          <div className="animate-fade-in" style={{ display: "flex", flexDirection: "column", gap: "20px" }}>
+            {/* Top Toolbar */}
+            <div className="glass" style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "16px", padding: "16px 24px", borderRadius: "var(--border-radius-md)" }}>
+              <div>
+                <h3 style={{ margin: 0, fontWeight: 700, fontSize: "1.1rem" }}>Thông tin chi tiết các bàn đang hoạt động</h3>
+                <p style={{ margin: "2px 0 0", fontSize: "0.8rem", color: "var(--text-secondary)" }}>
+                  Xem nhanh toàn bộ thực đơn đã đặt và lọc nhanh các bàn theo món ăn bị hết nguyên liệu.
+                </p>
+              </div>
+              <div className="filter-search" style={{ margin: 0, width: "320px" }}>
+                <Search size={15} style={{ color: "var(--text-tertiary)", flexShrink: 0 }} />
+                <input
+                  type="text"
+                  placeholder="Lọc nhanh bàn theo tên món..."
+                  value={itemFilterQuery}
+                  onChange={(e) => setItemFilterQuery(e.target.value)}
+                />
+              </div>
+            </div>
+
+            {/* Tables details list */}
+            <div style={{ display: "flex", flexDirection: "column", gap: "14px" }}>
+              {filteredDetailedTables.map((dt) => {
+                const isWaitingPayment = dt.table.status === "waiting_payment";
+                return (
+                  <div
+                    key={dt.table.id}
+                    className="glass table-detail-row animate-fade-in"
+                    onClick={() => setSelectedTable(dt.table)}
+                    style={{
+                      padding: "20px",
+                      borderRadius: "var(--border-radius-md)",
+                      display: "grid",
+                      gridTemplateColumns: "220px 1fr",
+                      gap: "24px",
+                      alignItems: "center",
+                      cursor: "pointer",
+                      transition: "transform 0.2s, box-shadow 0.2s",
+                      borderLeft: `4px solid ${isWaitingPayment ? "var(--accent-warning)" : "var(--accent-primary)"}`,
+                    }}
+                    onMouseEnter={(e) => {
+                      e.currentTarget.style.transform = "translateY(-2px)";
+                      e.currentTarget.style.boxShadow = "var(--shadow-card-hover)";
+                    }}
+                    onMouseLeave={(e) => {
+                      e.currentTarget.style.transform = "none";
+                      e.currentTarget.style.boxShadow = "var(--shadow-card)";
+                    }}
+                  >
+                    {/* Table Info Column */}
+                    <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
+                      <span style={{ fontSize: "0.75rem", color: "var(--text-secondary)", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.5px" }}>
+                        Bàn phục vụ
+                      </span>
+                      <h2 style={{ margin: 0, fontSize: "1.8rem", fontWeight: 700, color: "var(--accent-primary)", lineHeight: 1.1 }}>
+                        Bàn {dt.table.table_number.toString().padStart(2, "0")}
+                      </h2>
+                      <span style={{ fontSize: "0.82rem", color: "var(--text-secondary)" }}>
+                        {dt.table.floor || "Tầng 1"} • Bàn {getTableCapacity(dt.table.table_number)} người
+                      </span>
+                      <div style={{ marginTop: "4px" }}>
+                        <span className={`badge ${isWaitingPayment ? "danger" : "success"}`} style={{ fontSize: "0.75rem", padding: "4px 10px", borderRadius: "var(--border-radius-sm)", fontWeight: 700 }}>
+                          {isWaitingPayment ? "Chờ thanh toán" : "Đang phục vụ"}
+                        </span>
+                      </div>
+                    </div>
+
+                    {/* Ordered Items Column */}
+                    <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
+                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                        <h4 style={{ margin: 0, fontSize: "0.85rem", color: "var(--text-secondary)", fontWeight: 700, textTransform: "uppercase" }}>
+                          Danh sách món đã đặt ({dt.activeDetails.reduce((sum: number, d: any) => sum + d.quantity, 0)} món)
+                        </h4>
+                        <span style={{ fontSize: "0.82rem", color: "var(--text-secondary)", fontWeight: 600 }}>
+                          Tổng bill: <strong style={{ color: "var(--accent-primary)" }}>{dt.invoice?.total?.toLocaleString() || "0"}đ</strong>
+                        </span>
+                      </div>
+                      
+                      <div style={{ display: "flex", flexWrap: "wrap", gap: "8px" }}>
+                        {dt.activeDetails.map((detail: any) => {
+                          const matchesQuery = itemFilterQuery.trim() && detail.item_name?.toLowerCase().includes(itemFilterQuery.toLowerCase().trim());
+                          return (
+                            <div
+                              key={detail.id}
+                              style={{
+                                padding: "6px 12px",
+                                borderRadius: "8px",
+                                background: matchesQuery 
+                                  ? "rgba(232, 99, 43, 0.15)" 
+                                  : detail.cooking_status === "served" 
+                                    ? "rgba(32, 201, 151, 0.05)" 
+                                    : "rgba(0, 0, 0, 0.02)",
+                                border: matchesQuery 
+                                  ? "1px solid var(--accent-primary)" 
+                                  : "1px solid var(--glass-border)",
+                                boxShadow: matchesQuery ? "0 2px 8px rgba(232, 99, 43, 0.15)" : "none",
+                                display: "flex",
+                                alignItems: "center",
+                                gap: "8px",
+                                transition: "all 0.2s",
+                              }}
+                            >
+                              <span style={{ fontSize: "0.84rem", fontWeight: 700, color: "var(--accent-primary)" }}>
+                                x{detail.quantity}
+                              </span>
+                              <span style={{ fontSize: "0.84rem", fontWeight: 600, color: matchesQuery ? "var(--accent-primary)" : "var(--text-primary)" }}>
+                                {detail.item_name}
+                              </span>
+                              <span style={{
+                                fontSize: "0.68rem",
+                                fontWeight: 700,
+                                padding: "2px 6px",
+                                borderRadius: "4px",
+                                background: detail.cooking_status === "served" ? "rgba(32, 201, 151, 0.12)" : detail.cooking_status === "done" ? "rgba(32, 201, 151, 0.15)" : "rgba(255, 159, 67, 0.1)",
+                                color: detail.cooking_status === "served" || detail.cooking_status === "done" ? "var(--accent-secondary)" : "var(--accent-primary)"
+                              }}>
+                                {detail.cooking_status === "pending" ? "Chờ duyệt" : detail.cooking_status === "confirmed" ? "Đã nhận" : detail.cooking_status === "cooking" ? "Đang nấu" : detail.cooking_status === "done" ? "Chờ phục vụ" : "Phục vụ"}
+                              </span>
+                            </div>
+                          );
+                        })}
+                        {dt.activeDetails.length === 0 && (
+                          <span style={{ fontSize: "0.85rem", color: "var(--text-tertiary)", fontStyle: "italic" }}>
+                            Bàn chưa đặt món ăn nào.
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+
+              {filteredDetailedTables.length === 0 && (
+                <div className="glass" style={{ padding: "60px 20px", textAlign: "center", borderRadius: "var(--border-radius-lg)" }}>
+                  <Search size={48} style={{ color: "var(--accent-primary)", opacity: 0.4, marginBottom: "16px" }} />
+                  <h3 style={{ margin: 0, fontWeight: 700 }}>Không tìm thấy bàn nào</h3>
+                  <p style={{ color: "var(--text-secondary)", fontSize: "0.9rem", marginTop: "6px" }}>
+                    {itemFilterQuery.trim() 
+                      ? `Không có bàn nào đang hoạt động gọi món ăn phù hợp với từ khóa "${itemFilterQuery}"`
+                      : "Hiện tại không có bàn nào đang phục vụ hoặc chờ thanh toán."}
+                  </p>
+                  {itemFilterQuery.trim() && (
+                    <button className="btn btn-secondary" style={{ marginTop: "16px" }} onClick={() => setItemFilterQuery("")}>
+                      Xóa bộ lọc tìm kiếm
+                    </button>
+                  )}
+                </div>
+              )}
             </div>
           </div>
         )}
@@ -1074,15 +1381,42 @@ export default function Dashboard() {
                                       );
                                     }
                                   }
-                                  if (["pending", "confirmed", "cooking"].includes(detail.cooking_status)) {
+                                  {/* BR-003 v2.1: Chỉ hiện nút huỷ và thay thế khi pending hoặc confirmed */}
+                                  if (["pending", "confirmed"].includes(detail.cooking_status)) {
                                     return (
-                                      <button
-                                        className="btn-icon"
-                                        style={{ width: "24px", height: "24px", background: "rgba(255, 71, 87, 0.1)", border: "none", color: "var(--accent-danger)" }}
-                                        onClick={() => handleCancelDetail(detail.id, detail.cooking_status, selectedTable.id, selectedTable.table_number)}
-                                      >
-                                        <X size={14} />
-                                      </button>
+                                      <div style={{ display: "flex", gap: "6px" }}>
+                                        <button
+                                          className="btn-icon"
+                                          title="Đổi sang món khác"
+                                          style={{ width: "24px", height: "24px", background: "rgba(32, 201, 151, 0.1)", border: "none", color: "var(--accent-secondary)" }}
+                                          onClick={() => setSubstitutingDetail(detail)}
+                                        >
+                                          <ArrowLeftRight size={12} />
+                                        </button>
+                                        <button
+                                          className="btn-icon"
+                                          title="Huỷ món"
+                                          style={{ width: "24px", height: "24px", background: "rgba(255, 71, 87, 0.1)", border: "none", color: "var(--accent-danger)" }}
+                                          onClick={() => handleCancelDetail(detail.id, detail.cooking_status, selectedTable.id, selectedTable.table_number)}
+                                        >
+                                          <X size={14} />
+                                        </button>
+                                      </div>
+                                    );
+                                  }
+                                  {/* BR-003: Món đang nấu thì hiện nút yêu cầu huỷ */}
+                                  if (detail.cooking_status === "cooking") {
+                                    return (
+                                      <div style={{ display: "flex", gap: "6px" }}>
+                                        <button
+                                          className="btn-icon"
+                                          title="Yêu cầu huỷ món đang nấu"
+                                          style={{ width: "24px", height: "24px", background: "rgba(255, 159, 67, 0.1)", border: "none", color: "var(--accent-primary)" }}
+                                          onClick={() => handleRequestCancelDetail(detail.id, selectedTable.id, selectedTable.table_number)}
+                                        >
+                                          <X size={14} />
+                                        </button>
+                                      </div>
                                     );
                                   }
                                   return null;
@@ -1209,6 +1543,45 @@ export default function Dashboard() {
                   {tables.filter((t) => t.id !== selectedTable.id && (t.status === "occupied" || t.status === "waiting_payment")).length === 0 && (
                     <p style={{ textAlign: "center", fontSize: "0.85rem", color: "var(--text-secondary)", padding: "10px 0" }}>
                       Không có bàn có khách nào khác khả dụng để gộp.
+                    </p>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Substitute item modal */}
+          {substitutingDetail && (
+            <div className="modal-overlay" style={{ zIndex: 1000 }}>
+              <div className="modal-container" style={{ maxWidth: "450px" }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "16px" }}>
+                  <h3 style={{ margin: 0, fontSize: "1.1rem", fontWeight: 700 }}>Đổi sang món khác</h3>
+                  <button className="btn-icon" onClick={() => setSubstitutingDetail(null)} style={{ width: "32px", height: "32px" }}>
+                    <X size={16} />
+                  </button>
+                </div>
+                <p style={{ fontSize: "0.85rem", color: "var(--text-secondary)", marginBottom: "16px" }}>
+                  Chọn món ăn thay thế cho món <strong>"{substitutingDetail.item_name}"</strong>:
+                </p>
+                <div style={{ display: "flex", flexDirection: "column", gap: "10px", maxHeight: "300px", overflowY: "auto", paddingRight: "4px" }} className="hide-scrollbar">
+                  {menuItems
+                    .filter((item) => item.is_available && item.id !== substitutingDetail.item_id)
+                    .map((item) => (
+                      <button
+                        key={item.id}
+                        className="btn btn-secondary"
+                        style={{ justifyContent: "space-between", padding: "12px 18px", width: "100%", borderRadius: "var(--border-radius-md)" }}
+                        onClick={() => handleSubstituteDetail(substitutingDetail.id, item.id, selectedTable.id, selectedTable.table_number)}
+                      >
+                        <strong>{item.name}</strong>
+                        <span style={{ fontSize: "0.82rem", color: "var(--accent-primary)", fontWeight: 700 }}>
+                          {Number(item.price).toLocaleString()}đ
+                        </span>
+                      </button>
+                    ))}
+                  {menuItems.filter((item) => item.is_available && item.id !== substitutingDetail.item_id).length === 0 && (
+                    <p style={{ textAlign: "center", fontSize: "0.85rem", color: "var(--text-secondary)", padding: "10px 0" }}>
+                      Không có món ăn nào khả dụng để đổi.
                     </p>
                   )}
                 </div>

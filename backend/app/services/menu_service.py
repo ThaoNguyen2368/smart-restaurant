@@ -105,9 +105,29 @@ def update_menu_item(db: DBSession, item_id: int, data: MenuItemUpdate) -> MenuI
     return item
 
 
-async def mark_out_of_stock(db: DBSession, item_id: int) -> MenuItem:
-    """Kitchen reports out-of-stock (BR-009).
-    Sets is_available=FALSE and broadcasts to ALL open customer sessions.
+
+async def notify_out_of_stock(db: DBSession, item_id: int) -> MenuItem:
+    """Kitchen báo hết nguyên liệu (BR-009 v2.1).
+    CHỈ gửi WebSocket thông báo — KHÔNG thay đổi is_available trong DB.
+    Manager mới có quyền thực sự tắt món.
+    """
+    item = db.query(MenuItem).filter(MenuItem.id == item_id).first()
+    if not item:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Menu item not found")
+
+    # Broadcast tới Staff & Manager với thông tin đủ để hiển thị countdown 1:30
+    event = WSEvent.create(
+        event="OUT_OF_STOCK",
+        payload={"item_id": item_id, "item_name": item.name},
+    )
+    await ws_manager.broadcast("staff", event)
+
+    return item
+
+
+async def disable_menu_item(db: DBSession, item_id: int) -> MenuItem:
+    """Manager/Admin tắt món (BR-009c).
+    Cập nhật is_available = FALSE và broadcast MENU_ITEM_DISABLED tới tất cả khách hàng.
     """
     item = db.query(MenuItem).filter(MenuItem.id == item_id).first()
     if not item:
@@ -117,17 +137,39 @@ async def mark_out_of_stock(db: DBSession, item_id: int) -> MenuItem:
     db.commit()
     db.refresh(item)
 
-    # BR-009: Broadcast to ALL open customer sessions immediately
+    # Broadcast tới tất cả Customer Web sessions
     event = WSEvent.create(
         event="MENU_ITEM_DISABLED",
         payload={"item_id": item_id, "item_name": item.name},
     )
     await ws_manager.broadcast_to_prefix("orders:", event)
-    
-    # Broadcast to staff channel
+
+    # Thông báo xác nhận cho Staff
     await ws_manager.broadcast("staff", WSEvent.create(
-        event="OUT_OF_STOCK",
+        event="MENU_ITEM_DISABLED",
         payload={"item_id": item_id, "item_name": item.name},
     ))
+
+    return item
+
+
+async def enable_menu_item(db: DBSession, item_id: int) -> MenuItem:
+    """Manager/Admin bật lại món (BR-009c).
+    Cập nhật is_available = TRUE và broadcast MENU_ITEM_ENABLED tới tất cả khách hàng.
+    """
+    item = db.query(MenuItem).filter(MenuItem.id == item_id).first()
+    if not item:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Menu item not found")
+
+    item.is_available = True
+    db.commit()
+    db.refresh(item)
+
+    # Broadcast tới tất cả Customer Web sessions
+    event = WSEvent.create(
+        event="MENU_ITEM_ENABLED",
+        payload={"item_id": item_id, "item_name": item.name},
+    )
+    await ws_manager.broadcast_to_prefix("orders:", event)
 
     return item

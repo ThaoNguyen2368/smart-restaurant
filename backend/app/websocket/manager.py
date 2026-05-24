@@ -35,6 +35,8 @@ class ConnectionManager:
         """Broadcast an event to all connections on a channel.
         IMPORTANT: Only call AFTER DB transaction commits (backend.rule.md Section 5.3).
         """
+        clients = self.channels.get(channel, set())
+        print(f"[WS BROADCAST] Channel: {channel}, Event: {event.event}, Active Clients: {len(clients)}", flush=True)
         if channel not in self.channels:
             return
 

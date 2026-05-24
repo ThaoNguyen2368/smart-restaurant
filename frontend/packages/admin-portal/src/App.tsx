@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import {
   LayoutDashboard,
   Utensils,
@@ -14,6 +14,15 @@ import {
   Activity,
   ShieldAlert,
   X,
+  Eye,
+  EyeOff,
+  Trash2,
+  Search,
+  Filter,
+  UserCircle,
+  Bell,
+  DollarSign,
+  Calendar,
 } from "lucide-react";
 import { api } from "./api";
 import { useAuthStore } from "./store";
@@ -32,8 +41,11 @@ interface MenuItem {
   id: number;
   category_id: number;
   name: string;
+  description?: string;
   price: string;
+  image_url?: string;
   is_available: boolean;
+  display_order: number;
 }
 
 interface Category {
@@ -53,6 +65,7 @@ interface Table {
 export default function App() {
   const { token, user, login, logout } = useAuthStore();
   const [activeTab, setActiveTab] = useState("dashboard");
+  const [reportsSubTab, setReportsSubTab] = useState<"revenue" | "top-items" | "service-speed">("revenue");
   const [loading, setLoading] = useState(false);
 
   // Auth State
@@ -60,10 +73,100 @@ export default function App() {
   const [password, setPassword] = useState("");
   const [authError, setAuthError] = useState("");
 
+  // Toast Notification State
+  interface Toast {
+    id: number;
+    message: string;
+    type: "success" | "warning" | "info" | "error";
+  }
+  const [toasts, setToasts] = useState<Toast[]>([]);
+
+
+  // --- BANNER ĐẾM NGưỢC HẾT MÓN 1:30 (Manager) ---
+  interface OutOfStockBanner {
+    id: number;
+    item_id: number;
+    item_name: string;
+    secondsLeft: number;
+    escalated: boolean;
+  }
+  const [outOfStockBanners, setOutOfStockBanners] = useState<OutOfStockBanner[]>([]);
+  const bannerIdRef = useRef(0);
+
+  // Countdown tick
+  useEffect(() => {
+    if (outOfStockBanners.length === 0) return;
+    const tick = setInterval(() => {
+      setOutOfStockBanners((prev) =>
+        prev
+          .map((b) => {
+            const next = b.secondsLeft - 1;
+            if (next <= 0 && !b.escalated) return { ...b, secondsLeft: 0, escalated: true };
+            return { ...b, secondsLeft: Math.max(0, next) };
+          })
+          .filter((b) => b.secondsLeft > 0 || !b.escalated)
+      );
+    }, 1000);
+    return () => clearInterval(tick);
+  }, [outOfStockBanners.length]);
+
+  // WebSocket for Urgent Notifications (OUT_OF_STOCK)
+  useEffect(() => {
+    if (!token) return;
+
+    let ws: WebSocket | null = null;
+    let reconnectTimeout: any = null;
+
+    const connectWs = () => {
+      const base = import.meta.env.VITE_API_URL || "http://localhost:8000/api";
+      const wsBase = base.replace("http", "ws").replace(/\/api\/?$/, "");
+      
+      try {
+        ws = new WebSocket(`${wsBase}/ws/staff?token=${token}`);
+
+        ws.onmessage = (event) => {
+          try {
+            const data = JSON.parse(event.data);
+            if (data.event === "OUT_OF_STOCK") {
+              const payload = data.payload as { item_id: number; item_name: string };
+              // Khởi động countdown banner 1:30 (BR-009b — Manager nhận thông báo escalate sau 1:30)
+              const bannerId = bannerIdRef.current++;
+              setOutOfStockBanners((prev) => [
+                ...prev.filter((b) => b.item_id !== payload.item_id),
+                { id: bannerId, item_id: payload.item_id, item_name: payload.item_name, secondsLeft: 90, escalated: false },
+              ]);
+              // Refresh menu list
+              const customEvent = new CustomEvent("menu-item-out-of-stock", { detail: payload });
+              window.dispatchEvent(customEvent);
+            }
+          } catch (err) {
+            console.error("WS error parsing message:", err);
+          }
+        };
+
+        ws.onerror = (err) => console.error("WS connection error:", err);
+        ws.onclose = () => {
+          // Auto-reconnect after 3 seconds
+          reconnectTimeout = setTimeout(connectWs, 3000);
+        };
+      } catch (err) {
+        console.error("WS initialization failed:", err);
+        reconnectTimeout = setTimeout(connectWs, 3000);
+      }
+    };
+
+    connectWs();
+
+    return () => {
+      if (reconnectTimeout) clearTimeout(reconnectTimeout);
+      ws?.close();
+    };
+  }, [token]);
+
   // Kiểm tra vai trò và điều chuyển tab nếu không hợp lệ
   useEffect(() => {
     if (user && user.role === "manager") {
-      const allowed = ["dashboard", "reports"];
+      const allowed = ["dashboard", "reports", "menu"];
       if (!allowed.includes(activeTab)) {
         setActiveTab("dashboard");
       }
@@ -88,8 +191,13 @@ export default function App() {
     return (
       <div className="login-container animate-fade-in">
         <div className="glass login-card">
-          <h2 style={{ textAlign: "center", marginBottom: "8px", fontWeight: 800 }}>Smart OS</h2>
-          <p style={{ textAlign: "center", marginBottom: "32px", color: "var(--text-secondary)", fontSize: "0.9rem" }}>Admin Portal</p>
+          <div style={{ display: 'flex', justifyContent: 'center', marginBottom: '24px' }}>
+            <div className="auth-icon" style={{ width: '80px', height: '80px', borderRadius: '50%', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(245, 158, 11, 0.2)', color: '#f59e0b' }}>
+              <UserCircle size={40} />
+            </div>
+          </div>
+          <h2 style={{ textAlign: "center", marginBottom: "8px", fontWeight: 800, color: "#000000" }}>Admin Portal</h2>
+          <p style={{ textAlign: "center", marginBottom: "32px", color: "#374151", fontSize: "0.9rem", fontWeight: 500 }}>Vui lòng đăng nhập để tiếp tục</p>
           <form onSubmit={handleLogin} style={{ display: "flex", flexDirection: "column", gap: "20px" }}>
             <div className="form-group" style={{ marginBottom: 0 }}>
               <input
@@ -98,6 +206,7 @@ export default function App() {
                 value={username}
                 onChange={(e) => setUsername(e.target.value)}
                 required
+                style={{ color: "#000000" }}
               />
             </div>
             <div className="form-group" style={{ marginBottom: 0 }}>
@@ -107,10 +216,11 @@ export default function App() {
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 required
+                style={{ color: "#000000" }}
               />
             </div>
             {authError && <p className="error-text">{authError}</p>}
-            <button className="btn btn-primary" disabled={loading} style={{ justifyContent: "center", padding: "14px" }}>
+            <button className="btn btn-primary" disabled={loading} style={{ justifyContent: "center", padding: "14px", background: "linear-gradient(135deg, #f59e0b, #f97316)", color: "#FFFFFF", border: "none", boxShadow: "0 4px 12px rgba(245, 158, 11, 0.25)" }}>
               {loading ? <Loader2 className="animate-spin" size={18} /> : "Đăng nhập"}
             </button>
           </form>
@@ -135,28 +245,57 @@ export default function App() {
           >
             <LayoutDashboard size={18} /> Dashboard
           </button>
-          {!isManager && (
-            <>
-              <button
-                className={`nav-item ${activeTab === "menu" ? "active" : ""}`}
-                onClick={() => setActiveTab("menu")}
-              >
-                <Utensils size={18} /> Món ăn & Menu
-              </button>
-              <button
-                className={`nav-item ${activeTab === "tables" ? "active" : ""}`}
-                onClick={() => setActiveTab("tables")}
-              >
-                <TableIcon size={18} /> Sơ đồ bàn
-              </button>
-            </>
-          )}
+          
           <button
-            className={`nav-item ${activeTab === "reports" ? "active" : ""}`}
-            onClick={() => setActiveTab("reports")}
+            className={`nav-item ${activeTab === "menu" ? "active" : ""}`}
+            onClick={() => setActiveTab("menu")}
           >
-            <BarChart3 size={18} /> Báo cáo doanh thu
+            <Utensils size={18} /> Món ăn & Menu
           </button>
+
+          {!isManager && (
+            <button
+              className={`nav-item ${activeTab === "tables" ? "active" : ""}`}
+              onClick={() => setActiveTab("tables")}
+            >
+              <TableIcon size={18} /> Sơ đồ bàn
+            </button>
+          )}
+
+          <div style={{ display: "flex", flexDirection: "column" }}>
+            <button
+              className={`nav-item ${activeTab === "reports" ? "active" : ""}`}
+              onClick={() => { setActiveTab("reports"); }}
+              style={{ width: "100%" }}
+            >
+              <BarChart3 size={18} /> Thống kê & Báo cáo
+            </button>
+            {activeTab === "reports" && (
+              <div style={{ paddingLeft: "16px", display: "flex", flexDirection: "column", gap: "4px", marginTop: "4px", marginBottom: "8px" }}>
+                <button
+                  className={`nav-item ${reportsSubTab === "revenue" ? "active" : ""}`}
+                  onClick={() => setReportsSubTab("revenue")}
+                  style={{ padding: "8px 12px", fontSize: "0.82rem", height: "auto" }}
+                >
+                  Doanh thu
+                </button>
+                <button
+                  className={`nav-item ${reportsSubTab === "top-items" ? "active" : ""}`}
+                  onClick={() => setReportsSubTab("top-items")}
+                  style={{ padding: "8px 12px", fontSize: "0.82rem", height: "auto" }}
+                >
+                  Top 10 món bán chạy nhất
+                </button>
+                <button
+                  className={`nav-item ${reportsSubTab === "service-speed" ? "active" : ""}`}
+                  onClick={() => setReportsSubTab("service-speed")}
+                  style={{ padding: "8px 12px", fontSize: "0.82rem", height: "auto" }}
+                >
+                  Tốc độ chuẩn bị món tại Bếp
+                </button>
+              </div>
+            )}
+          </div>
           {!isManager && (
             <>
               <button
@@ -187,7 +326,7 @@ export default function App() {
 
       <main className="admin-main">
         <header className="admin-header glass">
-          <h1 style={{ fontWeight: 800 }}>
+          <h1 style={{ fontWeight: 700, fontSize: "1.35rem", color: "var(--text-primary)" }}>
             {activeTab === "dashboard" && "Dashboard Tổng quan"}
             {activeTab === "menu" && "Quản lý Menu Items"}
             {activeTab === "tables" && "Quản lý Sơ đồ bàn"}
@@ -197,28 +336,106 @@ export default function App() {
             {activeTab === "audit-logs" && "Nhật ký kiểm toán (Audit Logs)"}
           </h1>
           <div className="user-info">
+            <div className="notification-container">
+              <Bell size={18} />
+              <span className="notification-badge">5</span>
+            </div>
             <div style={{ textAlign: "right" }}>
-              <div style={{ fontWeight: 600, fontSize: "0.9rem" }}>{user?.sub}</div>
+              <div style={{ fontWeight: 600, fontSize: "0.95rem" }}>{user?.sub}</div>
               <span style={{ fontSize: "0.75rem", color: "var(--text-secondary)", textTransform: "capitalize" }}>
                 {user?.role === "admin" ? "Quản trị viên (Admin)" : "Quản lý sảnh (Manager)"}
               </span>
             </div>
-            <div className="avatar" style={{ fontWeight: 800 }}>
+            <div className="avatar" style={{ fontWeight: 700 }}>
               {user?.sub.charAt(0).toUpperCase()}
             </div>
           </div>
         </header>
 
+        {/* ===== OUT-OF-STOCK COUNTDOWN BANNERS (Manager) ===== */}
+        {outOfStockBanners.length > 0 && (
+          <div style={{ padding: "0 24px", display: "flex", flexDirection: "column", gap: "8px", marginTop: "8px" }}>
+            {outOfStockBanners.map((banner) => {
+              const mins = Math.floor(banner.secondsLeft / 60);
+              const secs = banner.secondsLeft % 60;
+              const isUrgent = banner.secondsLeft <= 30;
+              const isEscalated = banner.escalated;
+              return (
+                <div
+                  key={banner.id}
+                  className="glass"
+                  style={{
+                    padding: "12px 20px",
+                    borderRadius: "10px",
+                    borderLeft: `4px solid ${isEscalated ? "#ff2d55" : isUrgent ? "#ff9500" : "#ff4757"}`,
+                    background: isEscalated ? "rgba(255,45,85,0.1)" : "rgba(255,71,87,0.07)",
+                    display: "flex", alignItems: "center", justifyContent: "space-between", gap: "16px",
+                  }}
+                >
+                  <div style={{ flex: 1 }}>
+                    <strong style={{ color: isEscalated ? "#ff2d55" : "var(--text-primary)", fontSize: "0.9rem" }}>
+                      {isEscalated
+                        ? `⚠️ KHẨN [Manager]: Nhân viên chưa xử lý hết món “${banner.item_name}”`
+                        : `🔴 Nhà bếp báo HẾT MÓN: “${banner.item_name}”`}
+                    </strong>
+                    <p style={{ margin: "2px 0 0", fontSize: "0.8rem", color: "var(--text-secondary)" }}>
+                      {isEscalated
+                        ? "Nhân viên chưa xử lý xong trong 1:30. Vui lòng kiểm tra và tắt món nếu cần."
+                        : "Nhân viên đang liên hệ khách để xử lý. Bạn có thể tắt món ngay trong tab Quản lý Menu."}
+                    </p>
+                  </div>
+                  <div style={{ display: "flex", alignItems: "center", gap: "12px", flexShrink: 0 }}>
+                    {!isEscalated && (
+                      <div style={{ fontFamily: "monospace", fontWeight: 800, fontSize: "1.3rem", color: isUrgent ? "#ff9500" : "#ff4757", letterSpacing: "2px" }}>
+                        {mins}:{String(secs).padStart(2, "0")}
+                      </div>
+                    )}
+                    <button
+                      className="btn btn-primary"
+                      style={{ padding: "6px 14px", fontSize: "0.8rem" }}
+                      onClick={() => { setActiveTab("menu"); setOutOfStockBanners((prev) => prev.filter((b) => b.id !== banner.id)); }}
+                    >
+                      Tắt món
+                    </button>
+                    <button
+                      style={{ background: "none", border: "none", cursor: "pointer", color: "var(--text-tertiary)", padding: "4px" }}
+                      onClick={() => setOutOfStockBanners((prev) => prev.filter((b) => b.id !== banner.id))}
+                    >
+                      ✕
+                    </button>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+
         <section className="admin-content">
           {activeTab === "dashboard" && <DashboardView />}
-          {activeTab === "menu" && !isManager && <MenuManager />}
+          {activeTab === "menu" && <MenuManager />}
           {activeTab === "tables" && !isManager && <TableManager />}
-          {activeTab === "reports" && <ReportsView />}
+          {activeTab === "reports" && <ReportsView subTab={reportsSubTab} setSubTab={setReportsSubTab} />}
           {activeTab === "staff" && !isManager && <StaffManager />}
           {activeTab === "tax-config" && !isManager && <TaxConfigView />}
           {activeTab === "audit-logs" && !isManager && <AuditLogsView />}
         </section>
       </main>
+
+      {/* Toasts Container */}
+      <div className="toast-container">
+        {toasts.map((t) => (
+          <div key={t.id} className={`toast-card glass ${t.type} animate-slide-in`}>
+            <div className="toast-content">
+              {t.type === "error" && <ShieldAlert size={18} style={{ color: "var(--accent-danger)" }} />}
+              {t.type === "warning" && <ShieldAlert size={18} style={{ color: "var(--accent-secondary)" }} />}
+              <span className="toast-message">{t.message}</span>
+            </div>
+            <button className="toast-close-btn" onClick={() => setToasts((prev) => prev.filter((item) => item.id !== t.id))}>
+              <X size={14} />
+            </button>
+          </div>
+        ))}
+      </div>
     </div>
   );
 }
@@ -272,20 +489,23 @@ function DashboardView() {
 
   return (
     <div className="dashboard-grid animate-fade-in">
-      <div className="glass stat-card" style={{ borderLeft: "4px solid var(--accent-secondary)" }}>
+      <div className="glass stat-card">
+        <DollarSign className="stat-card-icon" size={24} />
         <h3 style={{ fontSize: "0.9rem", color: "var(--text-secondary)", fontWeight: 500 }}>Doanh thu hôm nay</h3>
-        <p className="stat-value" style={{ color: "var(--accent-secondary)" }}>{stats.todayRevenue.toLocaleString()}đ</p>
+        <p className="stat-value" style={{ color: "var(--text-primary)" }}>{stats.todayRevenue.toLocaleString()}đ</p>
         <span className="stat-change">Từ các hoá đơn đã thanh toán hoàn thành</span>
       </div>
-      <div className="glass stat-card" style={{ borderLeft: "4px solid var(--accent-primary)" }}>
+      <div className="glass stat-card">
+        <Utensils className="stat-card-icon" size={24} />
         <h3 style={{ fontSize: "0.9rem", color: "var(--text-secondary)", fontWeight: 500 }}>Bàn đang hoạt động</h3>
-        <p className="stat-value">{stats.activeSessions}</p>
+        <p className="stat-value" style={{ color: "var(--text-primary)" }}>{stats.activeSessions}</p>
         <span className="stat-change">{stats.waitingPayment} bàn đang chờ thanh toán</span>
       </div>
-      <div className="glass stat-card" style={{ borderLeft: "4px solid var(--accent-danger)" }}>
+      <div className="glass stat-card">
+        <Activity className="stat-card-icon" size={24} />
         <h3 style={{ fontSize: "0.9rem", color: "var(--text-secondary)", fontWeight: 500 }}>Trạng thái kết nối</h3>
-        <p className="stat-value" style={{ fontSize: "1.5rem", marginTop: "16px", display: "flex", alignItems: "center", gap: "8px" }}>
-          <Activity size={24} style={{ color: "var(--accent-secondary)" }} /> Ổn định
+        <p className="stat-value" style={{ fontSize: "1.5rem", marginTop: "16px", display: "flex", alignItems: "center", gap: "8px", color: "#10B981" }}>
+          <Activity size={24} style={{ color: "#10B981" }} /> Ổn định
         </p>
         <span className="stat-change">Đồng bộ dữ liệu thời gian thực sảnh/bếp</span>
       </div>
@@ -293,26 +513,37 @@ function DashboardView() {
   );
 }
 
-// 2. Menu Manager (Admin Only)
+// 2. Menu Manager (Admin Only) — Enhanced with toggle, search, filter, description
 function MenuManager() {
   const [items, setItems] = useState<MenuItem[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
   const [loading, setLoading] = useState(true);
+  const [toggling, setToggling] = useState<number | null>(null);
+
+  // Filter & Search State
+  const [searchQuery, setSearchQuery] = useState("");
+  const [filterAvailability, setFilterAvailability] = useState<"all" | "available" | "hidden">("all");
+  const [filterCategoryId, setFilterCategoryId] = useState<number | null>(null);
 
   // Modal State
   const [showModal, setShowModal] = useState(false);
   const [editItem, setEditItem] = useState<MenuItem | null>(null);
   const [itemName, setItemName] = useState("");
+  const [itemDescription, setItemDescription] = useState("");
   const [itemPrice, setItemPrice] = useState("");
   const [itemCategoryId, setItemCategoryId] = useState("");
   const [itemAvailable, setItemAvailable] = useState(true);
+  const [itemDisplayOrder, setItemDisplayOrder] = useState("0");
+
+  // Delete confirmation
+  const [deleteTarget, setDeleteTarget] = useState<MenuItem | null>(null);
 
   const fetchItems = () => {
     setLoading(true);
-    Promise.all([api.get("/menu-items"), api.get("/menu")])
-      .then(([itemRes, menuRes]) => {
+    Promise.all([api.get("/menu-items"), api.get("/categories")])
+      .then(([itemRes, catRes]) => {
         setItems(itemRes.data.data);
-        setCategories(menuRes.data.data?.categories || []);
+        setCategories(catRes.data.data || []);
       })
       .catch((err) => console.error(err))
       .finally(() => setLoading(false));
@@ -320,23 +551,50 @@ function MenuManager() {
 
   useEffect(() => {
     fetchItems();
+
+    const handleOutOfStock = () => {
+      fetchItems();
+    };
+    window.addEventListener("menu-item-out-of-stock", handleOutOfStock);
+    return () => {
+      window.removeEventListener("menu-item-out-of-stock", handleOutOfStock);
+    };
   }, []);
+
+  // Filtered items
+  const filteredItems = items.filter((item) => {
+    if (filterAvailability === "available" && !item.is_available) return false;
+    if (filterAvailability === "hidden" && item.is_available) return false;
+    if (filterCategoryId !== null && item.category_id !== filterCategoryId) return false;
+    if (searchQuery.trim()) {
+      const q = searchQuery.toLowerCase();
+      return item.name.toLowerCase().includes(q) || (item.description || "").toLowerCase().includes(q);
+    }
+    return true;
+  });
+
+  const availableCount = items.filter(i => i.is_available).length;
+  const hiddenCount = items.filter(i => !i.is_available).length;
 
   const openAddModal = () => {
     setEditItem(null);
     setItemName("");
+    setItemDescription("");
     setItemPrice("");
     setItemCategoryId(categories[0]?.id.toString() || "");
     setItemAvailable(true);
+    setItemDisplayOrder("0");
     setShowModal(true);
   };
 
   const openEditModal = (item: MenuItem) => {
     setEditItem(item);
     setItemName(item.name);
+    setItemDescription(item.description || "");
     setItemPrice(item.price);
     setItemCategoryId(item.category_id.toString());
     setItemAvailable(item.is_available);
+    setItemDisplayOrder(item.display_order?.toString() || "0");
     setShowModal(true);
   };
 
@@ -345,9 +603,11 @@ function MenuManager() {
     try {
       const payload = {
         name: itemName,
+        description: itemDescription || undefined,
         price: parseFloat(itemPrice),
         category_id: parseInt(itemCategoryId),
         is_available: itemAvailable,
+        display_order: parseInt(itemDisplayOrder) || 0,
       };
 
       if (editItem) {
@@ -362,6 +622,29 @@ function MenuManager() {
     }
   };
 
+  const handleToggleAvailability = async (item: MenuItem) => {
+    try {
+      setToggling(item.id);
+      await api.patch(`/menu-items/${item.id}/toggle-availability`);
+      fetchItems();
+    } catch (err: any) {
+      alert("Lỗi khi chuyển đổi trạng thái: " + (err.response?.data?.detail || err.message));
+    } finally {
+      setToggling(null);
+    }
+  };
+
+  const handleSoftDelete = async () => {
+    if (!deleteTarget) return;
+    try {
+      await api.patch(`/menu-items/${deleteTarget.id}`, { is_available: false });
+      setDeleteTarget(null);
+      fetchItems();
+    } catch (err: any) {
+      alert("Lỗi khi ẩn món ăn: " + (err.response?.data?.detail || err.message));
+    }
+  };
+
   if (loading) {
     return (
       <div style={{ display: "flex", justifyContent: "center", padding: "40px 0" }}>
@@ -371,52 +654,190 @@ function MenuManager() {
   }
 
   return (
-    <div className="glass table-container animate-fade-in">
-      <div className="table-header">
-        <h2 style={{ fontWeight: 700 }}>Danh sách Món ăn</h2>
+    <div className="animate-fade-in" style={{ display: "flex", flexDirection: "column", gap: "20px" }}>
+      {/* Stats Cards */}
+      <div className="menu-stats-row">
+        <div className="menu-stat-card glass">
+          <Utensils size={20} style={{ color: "var(--accent-primary)" }} />
+          <div>
+            <span className="menu-stat-label">Tổng cộng</span>
+            <span className="menu-stat-value">{items.length} món</span>
+          </div>
+        </div>
+        <div className="menu-stat-card glass">
+          <Eye size={20} style={{ color: "var(--accent-secondary)" }} />
+          <div>
+            <span className="menu-stat-label">Đang bán</span>
+            <span className="menu-stat-value" style={{ color: "var(--accent-secondary)" }}>{availableCount} món</span>
+          </div>
+        </div>
+        <div className="menu-stat-card glass">
+          <EyeOff size={20} style={{ color: "var(--accent-danger)" }} />
+          <div>
+            <span className="menu-stat-label">Đã ẩn</span>
+            <span className="menu-stat-value" style={{ color: "var(--accent-danger)" }}>{hiddenCount} món</span>
+          </div>
+        </div>
+      </div>
+
+      {/* Search & Filter Bar */}
+      <div className="menu-toolbar glass">
+        <div className="menu-search-box">
+          <Search size={18} style={{ color: "var(--text-tertiary)" }} />
+          <input
+            type="text"
+            placeholder="Tìm kiếm món ăn..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            className="menu-search-input"
+          />
+        </div>
+        <div className="menu-filter-group">
+          <Filter size={14} style={{ color: "var(--text-secondary)" }} />
+          <button
+            className={`menu-filter-btn ${filterAvailability === "all" ? "active" : ""}`}
+            onClick={() => setFilterAvailability("all")}
+          >
+            Tất cả ({items.length})
+          </button>
+          <button
+            className={`menu-filter-btn ${filterAvailability === "available" ? "active" : ""}`}
+            onClick={() => setFilterAvailability("available")}
+          >
+            Đang bán ({availableCount})
+          </button>
+          <button
+            className={`menu-filter-btn ${filterAvailability === "hidden" ? "active" : ""}`}
+            onClick={() => setFilterAvailability("hidden")}
+          >
+            Đã ẩn ({hiddenCount})
+          </button>
+        </div>
         <button className="btn btn-primary" onClick={openAddModal}>
           <Plus size={16} /> Thêm món mới
         </button>
       </div>
-      <table>
-        <thead>
-          <tr>
-            <th>Mã món</th>
-            <th>Tên món</th>
-            <th>Danh mục</th>
-            <th>Đơn giá</th>
-            <th>Trạng thái bán</th>
-            <th>Thao tác</th>
-          </tr>
-        </thead>
-        <tbody>
-          {items.map((item) => {
-            const cat = categories.find((c) => c.id === item.category_id);
-            return (
-              <tr key={item.id}>
-                <td>#{item.id}</td>
-                <td style={{ fontWeight: 600 }}>{item.name}</td>
-                <td>{cat ? cat.name : `Danh mục #${item.category_id}`}</td>
-                <td>{Number(item.price).toLocaleString()}đ</td>
-                <td>
-                  <span className={`badge ${item.is_available ? "success" : "danger"}`}>
-                    {item.is_available ? "Còn món" : "Hết món"}
-                  </span>
-                </td>
-                <td>
-                  <div className="actions">
-                    <button className="btn-icon" onClick={() => openEditModal(item)}>
-                      <Edit size={14} />
-                    </button>
-                  </div>
+
+      {/* Category Filter Chips */}
+      {categories.length > 0 && (
+        <div className="menu-category-chips">
+          <button
+            className={`menu-chip ${filterCategoryId === null ? "active" : ""}`}
+            onClick={() => setFilterCategoryId(null)}
+          >
+            Tất cả danh mục
+          </button>
+          {categories.map((c) => (
+            <button
+              key={c.id}
+              className={`menu-chip ${filterCategoryId === c.id ? "active" : ""}`}
+              onClick={() => setFilterCategoryId(filterCategoryId === c.id ? null : c.id)}
+            >
+              {c.name}
+            </button>
+          ))}
+        </div>
+      )}
+
+      {/* Items Table */}
+      <div className="glass table-container">
+        <div className="table-header">
+          <h2 style={{ fontWeight: 700 }}>Danh sách Món ăn</h2>
+          <span style={{ fontSize: "0.85rem", color: "var(--text-secondary)" }}>
+            Hiển thị {filteredItems.length} / {items.length} món
+          </span>
+        </div>
+        <table>
+          <thead>
+            <tr>
+              <th>Mã</th>
+              <th>Tên món</th>
+              <th>Danh mục</th>
+              <th>Mô tả</th>
+              <th>Đơn giá</th>
+              <th>Trạng thái</th>
+              <th style={{ textAlign: "center" }}>Thao tác</th>
+            </tr>
+          </thead>
+          <tbody>
+            {filteredItems.map((item) => {
+              const cat = categories.find((c) => c.id === item.category_id);
+              const isHidden = !item.is_available;
+              return (
+                <tr key={item.id} className={isHidden ? "row-hidden-item" : ""}>
+                  <td style={{ fontWeight: 600, opacity: isHidden ? 0.5 : 1 }}>#{item.id}</td>
+                  <td>
+                    <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                      <span style={{ fontWeight: 600, opacity: isHidden ? 0.5 : 1 }}>{item.name}</span>
+                      {isHidden && (
+                        <span className="badge-hidden-tag">
+                          <EyeOff size={10} /> Đã ẩn
+                        </span>
+                      )}
+                    </div>
+                  </td>
+                  <td style={{ opacity: isHidden ? 0.5 : 1 }}>{cat ? cat.name : `#${item.category_id}`}</td>
+                  <td style={{ opacity: isHidden ? 0.5 : 1, maxWidth: "200px" }}>
+                    <span style={{ fontSize: "0.85rem", color: "var(--text-secondary)", display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden" }}>
+                      {item.description || "—"}
+                    </span>
+                  </td>
+                  <td style={{ fontWeight: 600, opacity: isHidden ? 0.5 : 1 }}>
+                    {Number(item.price).toLocaleString()}đ
+                  </td>
+                  <td>
+                    <span className={`badge ${item.is_available ? "success" : "danger"}`}>
+                      {item.is_available ? "Còn món" : "Hết món"}
+                    </span>
+                  </td>
+                  <td>
+                    <div className="actions" style={{ justifyContent: "center" }}>
+                      <button
+                        className="btn-icon"
+                        onClick={() => handleToggleAvailability(item)}
+                        disabled={toggling === item.id}
+                        title={item.is_available ? "Ẩn khỏi menu (hết món)" : "Hiện lại trên menu (có món)"}
+                        style={{ color: item.is_available ? "var(--accent-danger)" : "var(--accent-secondary)" }}
+                      >
+                        {toggling === item.id ? (
+                          <Loader2 className="animate-spin" size={14} />
+                        ) : item.is_available ? (
+                          <EyeOff size={14} />
+                        ) : (
+                          <Eye size={14} />
+                        )}
+                      </button>
+                      <button className="btn-icon" onClick={() => openEditModal(item)} title="Chỉnh sửa">
+                        <Edit size={14} />
+                      </button>
+                      {item.is_available && (
+                        <button
+                          className="btn-icon danger"
+                          onClick={() => setDeleteTarget(item)}
+                          title="Ẩn món ăn (soft delete)"
+                        >
+                          <Trash2 size={14} />
+                        </button>
+                      )}
+                    </div>
+                  </td>
+                </tr>
+              );
+            })}
+            {filteredItems.length === 0 && (
+              <tr>
+                <td colSpan={7} style={{ textAlign: "center", padding: "40px", color: "var(--text-secondary)" }}>
+                  {searchQuery || filterAvailability !== "all" || filterCategoryId !== null
+                    ? "Không tìm thấy món ăn phù hợp với bộ lọc."
+                    : "Chưa có món ăn nào. Hãy thêm món mới!"}
                 </td>
               </tr>
-            );
-          })}
-        </tbody>
-      </table>
+            )}
+          </tbody>
+        </table>
+      </div>
 
-      {/* Modal Form */}
+      {/* Create/Edit Modal */}
       {showModal && (
         <div className="modal-overlay">
           <div className="modal-container glass animate-fade-in">
@@ -438,34 +859,57 @@ function MenuManager() {
                 />
               </div>
               <div className="form-group">
-                <label>Đơn giá (VNĐ)</label>
-                <input
-                  type="number"
-                  value={itemPrice}
-                  onChange={(e) => setItemPrice(e.target.value)}
-                  placeholder="Ví dụ: 45000"
-                  required
+                <label>Mô tả (tuỳ chọn)</label>
+                <textarea
+                  value={itemDescription}
+                  onChange={(e) => setItemDescription(e.target.value)}
+                  placeholder="Mô tả ngắn về món ăn, nguyên liệu, cách chế biến..."
+                  rows={3}
+                  className="menu-textarea"
                 />
               </div>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "16px" }}>
+                <div className="form-group">
+                  <label>Đơn giá (VNĐ)</label>
+                  <input
+                    type="number"
+                    value={itemPrice}
+                    onChange={(e) => setItemPrice(e.target.value)}
+                    placeholder="Ví dụ: 45000"
+                    required
+                    min="0"
+                  />
+                </div>
+                <div className="form-group">
+                  <label>Danh mục</label>
+                  <select value={itemCategoryId} onChange={(e) => setItemCategoryId(e.target.value)} required>
+                    {categories.map((c) => (
+                      <option key={c.id} value={c.id}>
+                        {c.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
               <div className="form-group">
-                <label>Danh mục</label>
-                <select value={itemCategoryId} onChange={(e) => setItemCategoryId(e.target.value)} required>
-                  {categories.map((c) => (
-                    <option key={c.id} value={c.id}>
-                      {c.name}
-                    </option>
-                  ))}
-                </select>
+                <label>Thứ tự hiển thị</label>
+                <input
+                  type="number"
+                  value={itemDisplayOrder}
+                  onChange={(e) => setItemDisplayOrder(e.target.value)}
+                  placeholder="0"
+                  min="0"
+                />
               </div>
               <div className="form-group" style={{ flexDirection: "row", alignItems: "center", gap: "10px", marginTop: "10px" }}>
                 <input
                   type="checkbox"
-                  id="is_available"
+                  id="menu_is_available"
                   checked={itemAvailable}
                   onChange={(e) => setItemAvailable(e.target.checked)}
                   style={{ width: "18px", height: "18px", margin: 0 }}
                 />
-                <label htmlFor="is_available" style={{ cursor: "pointer", userSelect: "none" }}>Mở bán món ăn này</label>
+                <label htmlFor="menu_is_available" style={{ cursor: "pointer", userSelect: "none" }}>Mở bán món ăn này</label>
               </div>
               <div style={{ display: "flex", justifyContent: "flex-end", gap: "12px", marginTop: "32px" }}>
                 <button type="button" className="btn btn-secondary" onClick={() => setShowModal(false)}>
@@ -476,6 +920,34 @@ function MenuManager() {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* Delete Confirmation Modal */}
+      {deleteTarget && (
+        <div className="modal-overlay">
+          <div className="modal-container glass animate-fade-in" style={{ maxWidth: "420px", textAlign: "center" }}>
+            <div className="delete-confirm-icon">
+              <EyeOff size={32} />
+            </div>
+            <h3 style={{ marginBottom: "12px", fontWeight: 700 }}>Ẩn món "{deleteTarget.name}"?</h3>
+            <p style={{ color: "var(--text-secondary)", fontSize: "0.9rem", marginBottom: "28px", lineHeight: "1.6" }}>
+              Món ăn sẽ bị ẩn khỏi menu khách hàng.<br />
+              Bạn có thể bật lại bất cứ lúc nào bằng nút <strong>"Hiện"</strong>.
+            </p>
+            <div style={{ display: "flex", justifyContent: "center", gap: "12px" }}>
+              <button className="btn btn-secondary" onClick={() => setDeleteTarget(null)}>
+                Huỷ
+              </button>
+              <button
+                className="btn"
+                style={{ background: "var(--accent-danger)", color: "white" }}
+                onClick={handleSoftDelete}
+              >
+                <EyeOff size={16} /> Xác nhận ẩn
+              </button>
+            </div>
           </div>
         </div>
       )}
@@ -661,8 +1133,13 @@ function TableManager() {
 }
 
 // 4. Reports View
-function ReportsView() {
-  const [subTab, setSubTab] = useState<"revenue" | "top-items" | "service-speed">("revenue");
+function ReportsView({
+  subTab,
+  setSubTab,
+}: {
+  subTab: "revenue" | "top-items" | "service-speed";
+  setSubTab: (tab: "revenue" | "top-items" | "service-speed") => void;
+}) {
   const [loading, setLoading] = useState(false);
 
   // Filters
@@ -674,6 +1151,9 @@ function ReportsView() {
   const [revReport, setRevReport] = useState<any>(null);
   const [topItems, setTopItems] = useState<any[]>([]);
   const [speedData, setSpeedData] = useState<any>(null);
+
+  // Chart hover state
+  const [hoveredPoint, setHoveredPoint] = useState<any>(null);
 
   const fetchRevenue = async () => {
     setLoading(true);
@@ -728,6 +1208,157 @@ function ReportsView() {
     ? Math.max(...revReport.data.map((d: any) => parseFloat(d.revenue)))
     : 0;
 
+  // Render modern SVG Line Chart
+  const renderLineChart = () => {
+    const data = revReport?.data || [];
+    if (data.length === 0) {
+      return (
+        <div style={{ height: "240px", display: "flex", alignItems: "center", justifyContent: "center", color: "var(--text-secondary)", fontSize: "0.9rem" }}>
+          Chưa có dữ liệu giao dịch trong khoảng thời gian này.
+        </div>
+      );
+    }
+
+    const width = 800;
+    const height = 240;
+    const paddingLeft = 60;
+    const paddingRight = 20;
+    const paddingTop = 20;
+    const paddingBottom = 40;
+
+    const chartWidth = width - paddingLeft - paddingRight;
+    const chartHeight = height - paddingTop - paddingBottom;
+    const maxVal = maxRevenue > 0 ? maxRevenue : 10000;
+
+    const points = data.map((d: any, i: number) => {
+      const val = parseFloat(d.revenue) || 0;
+      const x = paddingLeft + (i / Math.max(1, data.length - 1)) * chartWidth;
+      const y = paddingTop + (1 - val / maxVal) * chartHeight;
+      return { x, y, val, date: d.date };
+    });
+
+    let linePath = "";
+    let areaPath = "";
+
+    if (points.length > 0) {
+      linePath = points.map((p: any, i: number) => `${i === 0 ? "M" : "L"} ${p.x} ${p.y}`).join(" ");
+      areaPath = `${linePath} L ${points[points.length - 1].x} ${height - paddingBottom} L ${points[0].x} ${height - paddingBottom} Z`;
+    }
+
+    const gridLines = [];
+    const yTicksCount = 4;
+    for (let i = 0; i <= yTicksCount; i++) {
+      const yVal = (i / yTicksCount) * maxVal;
+      const y = paddingTop + (1 - i / yTicksCount) * chartHeight;
+      gridLines.push({ y, val: yVal });
+    }
+
+    return (
+      <div className="chart-svg-container">
+        {hoveredPoint && (
+          <div
+            className="chart-tooltip"
+            style={{
+              left: `${(hoveredPoint.x / width) * 100}%`,
+              top: `${(hoveredPoint.y / height) * 100}%`,
+              opacity: 1,
+            }}
+          >
+            <div style={{ fontSize: "0.7rem", color: "#9CA3AF", marginBottom: "2px" }}>{hoveredPoint.date}</div>
+            <div style={{ fontSize: "0.85rem", fontWeight: 700, color: "#FFFFFF" }}>{hoveredPoint.val.toLocaleString()}đ</div>
+          </div>
+        )}
+
+        <svg viewBox={`0 0 ${width} ${height}`} width="100%" height="240px" style={{ overflow: "visible" }}>
+          <defs>
+            <linearGradient id="chart-area-grad" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stopColor="var(--accent-primary)" stopOpacity="0.2" />
+              <stop offset="100%" stopColor="var(--accent-primary)" stopOpacity="0.0" />
+            </linearGradient>
+          </defs>
+
+          {/* Grid lines */}
+          {gridLines.map((line, idx) => (
+            <g key={idx}>
+              <line
+                x1={paddingLeft}
+                y1={line.y}
+                x2={width - paddingRight}
+                y2={line.y}
+                className="chart-grid-line"
+              />
+              <text
+                x={paddingLeft - 12}
+                y={line.y + 4}
+                className="chart-label-y"
+              >
+                {line.val >= 1000000
+                  ? `${(line.val / 1000000).toFixed(1)}M`
+                  : line.val >= 1000
+                    ? `${(line.val / 1000).toFixed(0)}k`
+                    : line.val}
+              </text>
+            </g>
+          ))}
+
+          {/* Gradient area */}
+          {areaPath && (
+            <path
+              d={areaPath}
+              fill="url(#chart-area-grad)"
+            />
+          )}
+
+          {/* Line Path */}
+          {linePath && (
+            <path
+              d={linePath}
+              className="chart-line-path"
+            />
+          )}
+
+          {/* X Axis line */}
+          <line
+            x1={paddingLeft}
+            y1={height - paddingBottom}
+            x2={width - paddingRight}
+            y2={height - paddingBottom}
+            className="chart-axis-line"
+          />
+
+          {/* Dots */}
+          {points.map((p: any, idx: number) => (
+            <circle
+              key={idx}
+              cx={p.x}
+              cy={p.y}
+              r={hoveredPoint && hoveredPoint.date === p.date ? 6 : 4}
+              className="chart-dot"
+              onMouseEnter={() => setHoveredPoint(p)}
+              onMouseLeave={() => setHoveredPoint(null)}
+            />
+          ))}
+
+          {/* X Labels */}
+          {points.map((p: any, idx: number) => {
+            const showLabel = points.length < 12 || idx % Math.ceil(points.length / 8) === 0 || idx === points.length - 1;
+            if (!showLabel) return null;
+            return (
+              <text
+                key={idx}
+                x={p.x}
+                y={height - paddingBottom + 20}
+                className="chart-label-text"
+              >
+                {p.date.substring(5)}
+              </text>
+            );
+          })}
+        </svg>
+      </div>
+    );
+  };
+
   return (
     <div className="reports-view animate-fade-in" style={{ display: "flex", flexDirection: "column", gap: "24px" }}>
       {/* Sub Tabs */}
@@ -736,10 +1367,10 @@ function ReportsView() {
           <BarChart3 size={14} /> Doanh thu
         </button>
         <button className={`filter-btn ${subTab === "top-items" ? "active" : ""}`} onClick={() => setSubTab("top-items")}>
-          <Utensils size={14} /> Món bán chạy
+          <Utensils size={14} /> Top 10 món ăn bán chạy nhất
         </button>
         <button className={`filter-btn ${subTab === "service-speed" ? "active" : ""}`} onClick={() => setSubTab("service-speed")}>
-          <Clock size={14} /> Tốc độ chuẩn bị món
+          <Clock size={14} /> Tốc độ chuẩn bị món ăn tại Bếp
         </button>
       </div>
 
@@ -752,13 +1383,19 @@ function ReportsView() {
       {!loading && subTab === "revenue" && (
         <div className="glass report-card animate-fade-in" style={{ padding: "24px", borderRadius: "16px" }}>
           <div className="report-filters">
-            <div className="form-group" style={{ marginBottom: 0 }}>
+            <div className="form-group" style={{ marginBottom: 0, position: "relative" }}>
               <label>Từ ngày</label>
-              <input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} />
+              <div style={{ position: "relative" }}>
+                <Calendar size={16} style={{ position: "absolute", left: "12px", top: "50%", transform: "translateY(-50%)", color: "var(--text-tertiary)", pointerEvents: "none" }} />
+                <input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} style={{ paddingLeft: "36px" }} />
+              </div>
             </div>
-            <div className="form-group" style={{ marginBottom: 0 }}>
+            <div className="form-group" style={{ marginBottom: 0, position: "relative" }}>
               <label>Đến ngày</label>
-              <input type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} />
+              <div style={{ position: "relative" }}>
+                <Calendar size={16} style={{ position: "absolute", left: "12px", top: "50%", transform: "translateY(-50%)", color: "var(--text-tertiary)", pointerEvents: "none" }} />
+                <input type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} style={{ paddingLeft: "36px" }} />
+              </div>
             </div>
             <div className="form-group" style={{ marginBottom: 0 }}>
               <label>Nhóm theo</label>
@@ -773,43 +1410,23 @@ function ReportsView() {
           {/* Stats summary */}
           <div className="report-stats-grid">
             <div className="report-summary-card">
-              <span style={{ fontSize: "0.82rem", color: "var(--text-secondary)" }}>Tổng doanh thu thực tế</span>
-              <p style={{ fontSize: "1.8rem", fontWeight: 700, margin: "8px 0 0 0", color: "var(--accent-secondary)" }}>
+              <span style={{ fontSize: "0.82rem", color: "var(--text-secondary)", fontWeight: 600 }}>Tổng doanh thu thực tế</span>
+              <p style={{ fontSize: "1.9rem", fontWeight: 800, margin: "8px 0 0 0", color: "var(--accent-secondary)", letterSpacing: "-0.02em" }}>
                 {parseFloat(revReport?.total_revenue || "0").toLocaleString()}đ
               </p>
             </div>
             <div className="report-summary-card">
-              <span style={{ fontSize: "0.82rem", color: "var(--text-secondary)" }}>Tổng số lượt thanh toán</span>
-              <p style={{ fontSize: "1.8rem", fontWeight: 700, margin: "8px 0 0 0" }}>
+              <span style={{ fontSize: "0.82rem", color: "var(--text-secondary)", fontWeight: 600 }}>Tổng số lượt thanh toán</span>
+              <p style={{ fontSize: "1.9rem", fontWeight: 800, margin: "8px 0 0 0", color: "var(--text-primary)", letterSpacing: "-0.02em" }}>
                 {revReport?.transaction_count || 0} giao dịch
               </p>
             </div>
           </div>
 
-          {/* CSS Chart */}
+          {/* SVG Chart */}
           <div className="chart-container">
-            <h4 style={{ marginBottom: "16px", fontWeight: 600 }}>Biểu đồ tăng trưởng</h4>
-            <div className="bar-chart">
-              {revReport?.data?.map((d: any) => {
-                const val = parseFloat(d.revenue);
-                const heightPercent = maxRevenue > 0 ? (val / maxRevenue) * 100 : 0;
-                return (
-                  <div key={d.date} className="chart-bar-wrapper">
-                    <div
-                      className="chart-bar"
-                      style={{ height: `${Math.max(heightPercent, 2)}%` }}
-                      title={`${d.date}: ${val.toLocaleString()}đ`}
-                    />
-                    <span className="chart-label">{d.date.substring(5)}</span>
-                  </div>
-                );
-              })}
-              {(!revReport?.data || revReport.data.length === 0) && (
-                <div style={{ flex: 1, textAlign: "center", color: "var(--text-secondary)", fontSize: "0.9rem" }}>
-                  Chưa có dữ liệu giao dịch trong khoảng thời gian này.
-                </div>
-              )}
-            </div>
+            <h4 style={{ marginBottom: "16px", fontWeight: 700, fontSize: "0.95rem", color: "var(--text-primary)" }}>Biểu đồ tăng trưởng</h4>
+            {renderLineChart()}
           </div>
 
           {/* Detail Table */}

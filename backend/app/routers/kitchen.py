@@ -38,10 +38,13 @@ async def update_status(detail_id: int, data: CookingStatusUpdate, current_user:
 
 @router.post("/menu-items/{item_id}/out-of-stock")
 async def report_out_of_stock(item_id: int, current_user: StaffUser = Depends(get_current_user), db: DBSession = Depends(get_db)):
-    """Report item out of stock (BR-009)."""
+    """Kitchen báo hết nguyên liệu (BR-009 v2.1).
+    CHỈ gửi WS thông báo tới Staff & Manager — KHÔNG cập nhật is_available.
+    Manager mới có quyền thực sự tắt món qua /api/menu-items/{id}/availability.
+    """
     user = require_roles("kitchen", "admin")(current_user)
-    item = await menu_service.mark_out_of_stock(db, item_id)
-    return api_response({"item_id": item.id, "is_available": item.is_available})
+    item = await menu_service.notify_out_of_stock(db, item_id)
+    return api_response({"item_id": item.id, "item_name": item.name, "notified": True})
 
 @router.get("/kitchen/status")
 async def get_kitchen_status(current_user: StaffUser = Depends(get_current_user)):

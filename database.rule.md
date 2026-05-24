@@ -13,7 +13,7 @@
 **PostgreSQL 15+ is the ONLY permitted production database.**
 
 | Environment | Permitted DB |
-|---|---|
+|---|---|d
 | Production | PostgreSQL 15+ |
 | Staging | PostgreSQL 15+ |
 | Development | PostgreSQL 15+ |

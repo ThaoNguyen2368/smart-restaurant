@@ -1,7 +1,7 @@
-import { useEffect, useMemo, useState, useRef } from "react"; // Thêm useRef
+import { useEffect, useMemo, useState, useRef } from "react";
 import {
   ChefHat, Flame, LogOut, RefreshCcw, CheckCircle2,
-  Clock, CookingPot, Bell, BellOff, Ban // Thêm BellOff
+  Clock, CookingPot, Bell, BellOff, Ban, AlertTriangle
 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { api } from "../api";
@@ -44,15 +44,19 @@ export default function Dashboard() {
   const logout = useAuthStore((state) => state.logout);
   const navigate = useNavigate();
 
-  // --- MỚI THÊM CHO ÂM BÁO ---
+  // --- ÂM BÁO ---
   const [soundEnabled, setSoundEnabled] = useState(false);
   const prevPendingCount = useRef(0);
   const audioRef = useRef<HTMLAudioElement | null>(null);
 
-  // Khởi tạo file âm thanh (dùng link tiếng chuông beep ngắn mặc định)
+  // --- TRẠNG THÁI BÁO HẾT MÓN (item_id → true nếu đang chờ staff xử lý) ---
+  const [outOfStockItemIds, setOutOfStockItemIds] = useState<Set<number>>(new Set());
+  const [notifyingItemId, setNotifyingItemId] = useState<number | null>(null);
+
   useEffect(() => {
     audioRef.current = new Audio("https://actions.google.com/sounds/v1/alarms/beep_short.ogg");
   }, []);
+
   const fetchQueue = async () => {
     try {
       setError("");
@@ -70,43 +74,70 @@ export default function Dashboard() {
     const interval = window.setInterval(fetchQueue, 5000);
 
     if (!token) {
-      return () => {
-        window.clearInterval(interval);
-      };
+      return () => { window.clearInterval(interval); };
     }
 
-    const ws = new WebSocket(getWsUrl(token));
-    ws.onmessage = () => {
-      fetchQueue();
+    let ws: WebSocket | null = null;
+    let reconnectTimeout: any = null;
+
+    const connectWs = () => {
+      ws = new WebSocket(getWsUrl(token));
+      
+      ws.onmessage = (event) => {
+        try {
+          const data = JSON.parse(event.data);
+
+          if (data.event === "ITEM_CANCELLED") {
+            // BR-010: Xóa món khỏi hàng đợi ngay lập tức
+            const { order_detail_id } = data.payload as { order_detail_id: number };
+            setQueue((prev) => prev.filter((item) => item.id !== order_detail_id));
+          } else if (data.event === "ITEM_SUBSTITUTED") {
+            // Món đổi sang món mới: xóa trạng thái đỏ cho old_item_id
+            const { old_item_id } = data.payload as { old_item_id: number; new_item_id: number };
+            setOutOfStockItemIds((prev) => {
+              const next = new Set(prev);
+              next.delete(old_item_id);
+              return next;
+            });
+            fetchQueue();
+          } else {
+            fetchQueue();
+          }
+        } catch { /* ignore parse errors */ }
+      };
+
+      ws.onclose = () => {
+        reconnectTimeout = setTimeout(connectWs, 3000);
+      };
+      
+      ws.onerror = () => {
+        // ws.close() will trigger onclose
+      };
     };
-    ws.onclose = () => { };
+
+    connectWs();
 
     return () => {
-      ws.close();
+      if (reconnectTimeout) clearTimeout(reconnectTimeout);
+      ws?.close();
       window.clearInterval(interval);
     };
   }, [token]);
 
-  const grouped = useMemo(() => {
-    return {
-      confirmed: queue.filter((x) => x.cooking_status === "confirmed"),
-      cooking: queue.filter((x) => x.cooking_status === "cooking"),
-      done: queue.filter((x) => x.cooking_status === "done"),
-    };
-  }, [queue]);
+  const grouped = useMemo(() => ({
+    confirmed: queue.filter((x) => x.cooking_status === "confirmed"),
+    cooking: queue.filter((x) => x.cooking_status === "cooking"),
+    done: queue.filter((x) => x.cooking_status === "done"),
+  }), [queue]);
 
-  // --- LOGIC PHÁT ÂM THANH KHI CÓ ĐƠN MỚI ---
+  // --- LOGIC PHÁT ÂM THANH ---
   useEffect(() => {
     const currentPending = grouped.confirmed.length;
-
-    // Nếu số đơn chờ nấu hiện tại lớn hơn số đơn cũ -> Có khách mới gọi món
     if (currentPending > prevPendingCount.current) {
       if (soundEnabled && audioRef.current) {
-        // Trình duyệt có thể ném lỗi nếu mạng chậm, catch lại để không crash web
         audioRef.current.play().catch(err => console.log("Lỗi phát âm thanh:", err));
       }
     }
-    // Cập nhật lại số lượng cũ để dành cho lần so sánh sau
     prevPendingCount.current = currentPending;
   }, [grouped.confirmed.length, soundEnabled]);
 
@@ -114,9 +145,7 @@ export default function Dashboard() {
     try {
       setProcessingId(detailId);
       setError("");
-      await api.patch(`/order-details/${detailId}/status`, {
-        cooking_status: status,
-      });
+      await api.patch(`/order-details/${detailId}/status`, { cooking_status: status });
       await fetchQueue();
     } catch (err: any) {
       const detail = err.response?.data?.detail;
@@ -126,24 +155,30 @@ export default function Dashboard() {
     }
   };
 
-  // Thêm tham số detailId để biết chính xác tờ order nào cần hủy
+  /**
+   * Báo hết nguyên liệu — CHỈ gửi thông báo WS tới Staff/Manager.
+   * KHÔNG tắt món trên hệ thống (Manager mới có quyền đó).
+   * Món chuyển màu đỏ trên KDS, nút bị vô hiệu hóa cho đến khi được xử lý.
+   */
   const reportOutOfStock = async (itemId: number) => {
-    // Không cần truyền detailId nữa
-    if (!window.confirm("Báo hết món này trên toàn hệ thống? (Nhân viên phục vụ sẽ liên hệ khách để xử lý đơn hiện tại)")) return;
+    if (!window.confirm(
+      "Báo hết nguyên liệu cho món này?\n\n" +
+      "• Nhân viên phục vụ sẽ được thông báo ngay.\n" +
+      "• Món sẽ chuyển màu đỏ và chờ nhân viên xử lý với khách.\n" +
+      "• Manager mới có thể tắt món hoàn toàn trên hệ thống."
+    )) return;
 
     try {
+      setNotifyingItemId(itemId);
       setError("");
-
-      // Gọi ĐÚNG 1 API duy nhất theo BRD Mục 7.4
       await api.post(`/menu-items/${itemId}/out-of-stock`);
-
-      // Tải lại dữ liệu (Lưu ý: Món này vẫn sẽ nằm trên màn hình KDS cho đến khi Staff xác nhận hủy/đổi món với khách)
-      await fetchQueue();
-
-      alert("Đã khóa món thành công! Vui lòng chờ Staff xử lý đổi/hủy với khách.");
+      // Đánh dấu item này đang chờ xử lý → hiển thị màu đỏ
+      setOutOfStockItemIds((prev) => new Set([...prev, itemId]));
     } catch (err: any) {
       const detail = err.response?.data?.detail;
       setError(typeof detail === "string" ? detail : detail?.message || "Lỗi báo hết món.");
+    } finally {
+      setNotifyingItemId(null);
     }
   };
 
@@ -155,16 +190,36 @@ export default function Dashboard() {
   const renderCard = (item: QueueItem) => {
     const itemName = item.menu_item?.name || `Món #${item.item_id}`;
     const tableId = item.order?.session?.table_id || "?";
+    const isOutOfStock = outOfStockItemIds.has(item.item_id);
 
     return (
-      <div className="queue-card" key={item.id}>
+      <div
+        className="queue-card"
+        key={item.id}
+        style={isOutOfStock ? {
+          borderColor: "#ff4757",
+          boxShadow: "0 0 0 2px rgba(255,71,87,0.25)",
+          background: "rgba(255,71,87,0.07)"
+        } : {}}
+      >
+        {isOutOfStock && (
+          <div style={{
+            display: "flex", alignItems: "center", gap: "6px",
+            color: "#ff4757", fontWeight: 700, fontSize: "0.8rem",
+            marginBottom: "8px", padding: "4px 8px",
+            background: "rgba(255,71,87,0.1)", borderRadius: "6px",
+          }}>
+            <AlertTriangle size={14} />
+            HẾT NGUYÊN LIỆU — Đang chờ Staff xử lý với khách
+          </div>
+        )}
+
         <div className="card-meta">
           <span>Đơn #{item.order_id} • Bàn {tableId}</span>
-          {/* Bạn có thể thêm timestamp ở đây nếu backend có trả về created_at */}
         </div>
 
         <div className="card-title-row">
-          <h4>{itemName}</h4>
+          <h4 style={isOutOfStock ? { color: "#ff4757" } : {}}>{itemName}</h4>
           <span className="qty">x{item.quantity}</span>
         </div>
 
@@ -173,11 +228,23 @@ export default function Dashboard() {
         <div className="actions">
           {item.cooking_status === "confirmed" && (
             <>
-              <button className="btn btn-primary" disabled={processingId === item.id} onClick={() => updateStatus(item.id, "cooking")}>
+              <button
+                className="btn btn-primary"
+                disabled={processingId === item.id || isOutOfStock}
+                onClick={() => updateStatus(item.id, "cooking")}
+                title={isOutOfStock ? "Đang chờ Staff xử lý hết nguyên liệu" : ""}
+              >
                 <Flame size={18} /> Bắt đầu nấu
               </button>
-              <button className="btn btn-outline" onClick={() => reportOutOfStock(item.item_id)}>
-                <Ban size={16} /> Báo hết món
+              <button
+                className="btn btn-outline"
+                onClick={() => reportOutOfStock(item.item_id)}
+                disabled={isOutOfStock || notifyingItemId === item.item_id}
+                title={isOutOfStock ? "Đã báo hết — đang chờ Staff xử lý" : "Báo hết nguyên liệu"}
+                style={isOutOfStock ? { opacity: 0.5, cursor: "not-allowed" } : {}}
+              >
+                <Ban size={16} />
+                {isOutOfStock ? "Đã báo hết" : "Báo hết món"}
               </button>
             </>
           )}
@@ -200,7 +267,6 @@ export default function Dashboard() {
 
   return (
     <div className="kitchen-layout">
-      {/* Sidebar */}
       <aside className="sidebar">
         <div style={{ display: "flex", alignItems: "center", gap: "12px", marginBottom: "8px" }}>
           <ChefHat size={32} color="var(--status-orange)" />
@@ -223,6 +289,14 @@ export default function Dashboard() {
             <span style={{ display: "flex", alignItems: "center", gap: "8px" }}><CheckCircle2 size={20} /> Đã xong</span>
             <strong>{grouped.done.length}</strong>
           </div>
+          {outOfStockItemIds.size > 0 && (
+            <div className="stat" style={{ background: "rgba(255,71,87,0.15)", borderLeft: "3px solid #ff4757" }}>
+              <span style={{ display: "flex", alignItems: "center", gap: "8px", color: "#ff4757" }}>
+                <AlertTriangle size={20} /> Hết NL
+              </span>
+              <strong style={{ color: "#ff4757" }}>{outOfStockItemIds.size}</strong>
+            </div>
+          )}
         </div>
 
         <div style={{ marginTop: "auto", display: "flex", flexDirection: "column", gap: "12px" }}>
@@ -235,7 +309,6 @@ export default function Dashboard() {
         </div>
       </aside>
 
-      {/* Main Board */}
       <main className="content">
         <header className="content-header">
           <div>
@@ -259,13 +332,10 @@ export default function Dashboard() {
         ) : (
           <div className="columns">
 
-            {/* Cột 1: Chờ nấu */}
             <section className="kanban-col col-orange">
               <div className="col-header">
                 <Clock size={24} />
-                <div style={{ display: "flex", flexDirection: "column", gap: "2px" }}>
-                  <span>Chờ nấu ({grouped.confirmed.length})</span>
-                </div>
+                <span>Chờ nấu ({grouped.confirmed.length})</span>
               </div>
               <div className="list">
                 {grouped.confirmed.length === 0 ? (
@@ -273,19 +343,14 @@ export default function Dashboard() {
                     <Clock size={48} strokeWidth={1} style={{ marginBottom: "16px" }} />
                     <p>Không có món chờ nấu</p>
                   </div>
-                ) : (
-                  grouped.confirmed.map(item => renderCard(item))
-                )}
+                ) : grouped.confirmed.map(item => renderCard(item))}
               </div>
             </section>
 
-            {/* Cột 2: Đang nấu */}
             <section className="kanban-col col-blue">
               <div className="col-header">
                 <CookingPot size={24} />
-                <div style={{ display: "flex", flexDirection: "column", gap: "2px" }}>
-                  <span>Đang nấu ({grouped.cooking.length})</span>
-                </div>
+                <span>Đang nấu ({grouped.cooking.length})</span>
               </div>
               <div className="list">
                 {grouped.cooking.length === 0 ? (
@@ -293,19 +358,14 @@ export default function Dashboard() {
                     <CookingPot size={48} strokeWidth={1} style={{ marginBottom: "16px" }} />
                     <p>Không có món đang nấu</p>
                   </div>
-                ) : (
-                  grouped.cooking.map(item => renderCard(item))
-                )}
+                ) : grouped.cooking.map(item => renderCard(item))}
               </div>
             </section>
 
-            {/* Cột 3: Đã xong */}
             <section className="kanban-col col-green">
               <div className="col-header">
                 <CheckCircle2 size={24} />
-                <div style={{ display: "flex", flexDirection: "column", gap: "2px" }}>
-                  <span>Đã xong ({grouped.done.length})</span>
-                </div>
+                <span>Đã xong ({grouped.done.length})</span>
               </div>
               <div className="list">
                 {grouped.done.length === 0 ? (
@@ -313,9 +373,7 @@ export default function Dashboard() {
                     <CheckCircle2 size={48} strokeWidth={1} style={{ marginBottom: "16px" }} />
                     <p>Không có món chờ phục vụ</p>
                   </div>
-                ) : (
-                  grouped.done.map(item => renderCard(item))
-                )}
+                ) : grouped.done.map(item => renderCard(item))}
               </div>
             </section>
 
