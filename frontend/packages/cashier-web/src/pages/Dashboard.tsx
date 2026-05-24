@@ -123,20 +123,25 @@ export default function Dashboard() {
     if (!shiftSummary || !shiftSummary.payments) return [];
 
     const groups = shiftSummary.payments.reduce((acc: any, p: any) => {
+      const isRounding = p.payment_method === 'voucher' && p.transaction_ref?.toLowerCase().includes('làm tròn');
+      if (isRounding) return acc;
+
       if (!acc[p.session_id]) {
         acc[p.session_id] = {
           session_id: p.session_id,
           latest_time: p.paid_at,
           methods: [p.payment_method],
           transactions: [{ id: p.id, ref: p.transaction_ref, amount: p.amount, method: p.payment_method }],
-          total_amount: Number(p.amount)
+          total_amount: p.payment_method !== "voucher" ? Number(p.amount) : 0
         };
       } else {
         if (!acc[p.session_id].methods.includes(p.payment_method)) {
           acc[p.session_id].methods.push(p.payment_method);
         }
         acc[p.session_id].transactions.push({ id: p.id, ref: p.transaction_ref, amount: p.amount, method: p.payment_method });
-        acc[p.session_id].total_amount += Number(p.amount);
+        if (p.payment_method !== "voucher") {
+          acc[p.session_id].total_amount += Number(p.amount);
+        }
 
         if (new Date(p.paid_at) > new Date(acc[p.session_id].latest_time)) {
           acc[p.session_id].latest_time = p.paid_at;
@@ -232,12 +237,10 @@ export default function Dashboard() {
       setError("");
       const res = await api.get(`/sessions/${sessionId}/invoice`);
       const nextInvoice = res.data.data as InvoiceData;
-      if (nextInvoice.session_status === "closed" || nextInvoice.table_status === "empty") {
-        setInvoice(null);
-        setError("Phiên đã đóng và bàn đã được reset.");
-        return;
-      }
       setInvoice(nextInvoice);
+      if (nextInvoice.session_status === "closed") {
+        setError("Lưu ý: Phiên giao dịch này đã đóng.");
+      }
       const currentRemaining = typeof nextInvoice.remaining === "string" ? Number(nextInvoice.remaining) : nextInvoice.remaining;
       if (currentRemaining <= 0) {
         setPaymentStep("menu");
@@ -487,6 +490,23 @@ export default function Dashboard() {
     window.print();
   };
 
+  const handleReprintHistory = async (sessionId: number) => {
+    try {
+      setProcessing(true);
+      const res = await api.get(`/sessions/${sessionId}/invoice`);
+      setInvoice(res.data.data as InvoiceData);
+      setSelectedSessionId(String(sessionId));
+      
+      setTimeout(() => {
+        window.print();
+      }, 500);
+    } catch (err: any) {
+      setError(getErrorMessage(err, "Không thể tải hóa đơn để in."));
+    } finally {
+      setProcessing(false);
+    }
+  };
+
   const handlePrintQR = () => {
     const qrUrl = `https://img.vietqr.io/image/970415-0335831571-compact2.png?amount=${remaining}&addInfo=Thanh toan don ${invoice?.session_id}&accountName=QUAN AN SMART OS&time=${qrKey}`;
     const printWindow = window.open('', '_blank', 'width=450,height=550');
@@ -688,7 +708,26 @@ export default function Dashboard() {
                       </div>
                     ))}
 
-                    <div className="summary-total" style={{ borderTop: 'none', paddingTop: 0 }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', borderTop: '1px dashed var(--glass-border)', paddingTop: '10px', marginTop: '10px' }}>
+                      <span className="muted">Tạm tính</span>
+                      <strong>{formatVnd(invoice.subtotal)}</strong>
+                    </div>
+
+                    {Number(invoice.service_charge) > 0 && (
+                      <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '6px' }}>
+                        <span className="muted">Phí phục vụ</span>
+                        <strong>{formatVnd(invoice.service_charge)}</strong>
+                      </div>
+                    )}
+
+                    {Number(invoice.tax_amount) > 0 && (
+                      <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '6px' }}>
+                        <span className="muted">Thuế VAT</span>
+                        <strong>{formatVnd(invoice.tax_amount)}</strong>
+                      </div>
+                    )}
+
+                    <div className="summary-total" style={{ paddingTop: '10px' }}>
                       <span className="muted" style={{ fontWeight: 500, fontSize: '0.95rem' }}>Tổng hóa đơn</span>
                       <strong style={{ fontSize: '1.1rem', color: 'var(--text-primary)' }}>
                         {formatVnd(
@@ -1017,7 +1056,7 @@ export default function Dashboard() {
             </div>
           )}
 
-          <div style={{ overflowX: "auto" }}>
+          <div style={{ overflowX: "auto", overflowY: "auto", maxHeight: "60vh" }}>
             <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.95rem" }}>
               <thead>
                 <tr style={{ borderBottom: "2px solid var(--glass-border)", textAlign: "left" }}>
@@ -1068,7 +1107,15 @@ export default function Dashboard() {
                         </div>
                       </td>
                       <td style={{ padding: "14px 12px", textAlign: "right", fontWeight: 700, color: "var(--text-primary)", verticalAlign: "top", fontSize: '1.1rem' }}>
-                        {formatVnd(group.total_amount)}
+                        <div>{formatVnd(group.total_amount)}</div>
+                        <div style={{ marginTop: '8px', display: 'flex', justifyContent: 'flex-end' }}>
+                          <button 
+                            onClick={() => handleReprintHistory(group.session_id)}
+                            style={{ padding: '4px 10px', fontSize: '0.75rem', background: '#eff6ff', color: '#2563eb', border: '1px solid #bfdbfe', borderRadius: '6px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '4px' }}
+                          >
+                            <Printer size={12} /> In lại
+                          </button>
+                        </div>
                       </td>
                     </tr>
                   ))

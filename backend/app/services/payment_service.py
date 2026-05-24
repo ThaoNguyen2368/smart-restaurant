@@ -227,11 +227,13 @@ def get_shift_summary(db: DBSession, cashier_id: int) -> dict:
         .all()
     )
     
-    total = sum(Decimal(str(p.amount)) for p in payments)
+    total = sum(Decimal(str(p.amount)) for p in payments if (p.payment_method or "").lower() != "voucher")
     
     methods = {}
     for p in payments:
         pm = p.payment_method.lower() if p.payment_method else "unknown"
+        if pm == "voucher" and p.transaction_ref and "làm tròn" in p.transaction_ref.lower():
+            continue
         if pm not in methods:
             methods[pm] = Decimal("0")
         methods[pm] += Decimal(str(p.amount))
