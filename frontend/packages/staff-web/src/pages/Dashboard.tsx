@@ -347,7 +347,7 @@ export default function Dashboard() {
           setPendingCancelRequests((prev) => {
             return prev.filter((req) => {
               const matched = details.find((d) => d.id === req.order_detail_id);
-              if (!matched || matched.cooking_status !== "cooking") {
+              if (matched && matched.cooking_status !== "cooking") {
                 return false;
               }
               return true;
@@ -449,6 +449,20 @@ export default function Dashboard() {
       fetchData();
     } catch (err: any) {
       alert(err.response?.data?.detail?.message || err.response?.data?.detail || "Lỗi thao tác huỷ món");
+    }
+  };
+
+  const handleRequestCancelDetail = async (detailId: number, tableId: number, tableNumber: number) => {
+    const reason = prompt("Món ăn này đang được chế biến. Nhập lý do yêu cầu huỷ món (cần Quản lý duyệt):");
+    if (reason === null) return;
+    if (!reason.trim()) { alert("Lý do huỷ không được trống."); return; }
+    try {
+      const res = await api.post(`/order-details/${detailId}/cancel-request`, { cancel_reason: reason });
+      addToast(res.data?.message || "Đã gửi yêu cầu huỷ món đang nấu tới Quản lý!", "info");
+      await loadTableProgress(tableId, tableNumber);
+      fetchData();
+    } catch (err: any) {
+      alert(err.response?.data?.detail?.message || err.response?.data?.detail || "Lỗi gửi yêu cầu huỷ món");
     }
   };
 
@@ -1384,6 +1398,21 @@ export default function Dashboard() {
                                           title="Huỷ món"
                                           style={{ width: "24px", height: "24px", background: "rgba(255, 71, 87, 0.1)", border: "none", color: "var(--accent-danger)" }}
                                           onClick={() => handleCancelDetail(detail.id, detail.cooking_status, selectedTable.id, selectedTable.table_number)}
+                                        >
+                                          <X size={14} />
+                                        </button>
+                                      </div>
+                                    );
+                                  }
+                                  {/* BR-003: Món đang nấu thì hiện nút yêu cầu huỷ */}
+                                  if (detail.cooking_status === "cooking") {
+                                    return (
+                                      <div style={{ display: "flex", gap: "6px" }}>
+                                        <button
+                                          className="btn-icon"
+                                          title="Yêu cầu huỷ món đang nấu"
+                                          style={{ width: "24px", height: "24px", background: "rgba(255, 159, 67, 0.1)", border: "none", color: "var(--accent-primary)" }}
+                                          onClick={() => handleRequestCancelDetail(detail.id, selectedTable.id, selectedTable.table_number)}
                                         >
                                           <X size={14} />
                                         </button>

@@ -18,7 +18,7 @@ ORDER_DETAIL_TRANSITIONS: dict[str, dict[str, list[str]]] = {
     },
     "cooking": {
         "done": ["kitchen"],
-        # BR-003 v2.1: cooking → cancelled FORBIDDEN for ALL roles
+        "cancelled": ["manager", "admin"],  # BR-003: Manager approval required
     },
     "done": {
         "served": ["kitchen", "staff", "manager", "admin"],
@@ -72,13 +72,13 @@ def validate_order_detail_transition(
     """Validate OrderDetail cooking_status transition.
     Raises HTTPException if transition is invalid.
     """
-    # BR-003 v2.1: cooking/done/served → cancelled is FORBIDDEN for ALL roles
-    if current_status in ("cooking", "done", "served") and target_status == "cancelled":
+    # BR-003 v2.1: done/served → cancelled is FORBIDDEN for ALL roles
+    if current_status in ("done", "served") and target_status == "cancelled":
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail={
                 "error": "BUSINESS_RULE_VIOLATION",
-                "message": f"Không thể huỷ món ở trạng thái '{current_status}'. Chỉ được huỷ khi món ở trạng thái 'pending' hoặc 'confirmed'.",
+                "message": f"Không thể huỷ món ở trạng thái '{current_status}'. Chỉ được huỷ khi món ở trạng thái 'pending', 'confirmed' hoặc 'cooking' (yêu cầu quản lý phê duyệt).",
                 "code": "BR-003",
             },
         )
