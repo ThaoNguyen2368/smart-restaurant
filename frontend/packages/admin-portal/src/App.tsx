@@ -19,6 +19,7 @@ import {
   Trash2,
   Search,
   Filter,
+  UserCircle,
 } from "lucide-react";
 import { api } from "./api";
 import { useAuthStore } from "./store";
@@ -186,8 +187,13 @@ export default function App() {
     return (
       <div className="login-container animate-fade-in">
         <div className="glass login-card">
-          <h2 style={{ textAlign: "center", marginBottom: "8px", fontWeight: 800 }}>Smart OS</h2>
-          <p style={{ textAlign: "center", marginBottom: "32px", color: "var(--text-secondary)", fontSize: "0.9rem" }}>Admin Portal</p>
+          <div style={{ display: 'flex', justifyContent: 'center', marginBottom: '24px' }}>
+            <div className="auth-icon" style={{ width: '80px', height: '80px', borderRadius: '50%', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(245, 158, 11, 0.2)', color: '#f59e0b' }}>
+              <UserCircle size={40} />
+            </div>
+          </div>
+          <h2 style={{ textAlign: "center", marginBottom: "8px", fontWeight: 800, color: "#000000" }}>Admin Portal</h2>
+          <p style={{ textAlign: "center", marginBottom: "32px", color: "#374151", fontSize: "0.9rem", fontWeight: 500 }}>Vui lòng đăng nhập để tiếp tục</p>
           <form onSubmit={handleLogin} style={{ display: "flex", flexDirection: "column", gap: "20px" }}>
             <div className="form-group" style={{ marginBottom: 0 }}>
               <input
@@ -196,6 +202,7 @@ export default function App() {
                 value={username}
                 onChange={(e) => setUsername(e.target.value)}
                 required
+                style={{ color: "#000000" }}
               />
             </div>
             <div className="form-group" style={{ marginBottom: 0 }}>
@@ -205,10 +212,11 @@ export default function App() {
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 required
+                style={{ color: "#000000" }}
               />
             </div>
             {authError && <p className="error-text">{authError}</p>}
-            <button className="btn btn-primary" disabled={loading} style={{ justifyContent: "center", padding: "14px" }}>
+            <button className="btn btn-primary" disabled={loading} style={{ justifyContent: "center", padding: "14px", background: "linear-gradient(135deg, #f59e0b, #f97316)", color: "#FFFFFF", border: "none", boxShadow: "0 4px 12px rgba(245, 158, 11, 0.25)" }}>
               {loading ? <Loader2 className="animate-spin" size={18} /> : "Đăng nhập"}
             </button>
           </form>
@@ -286,7 +294,7 @@ export default function App() {
 
       <main className="admin-main">
         <header className="admin-header glass">
-          <h1 style={{ fontWeight: 800 }}>
+          <h1 style={{ fontWeight: 800, color: "#000000" }}>
             {activeTab === "dashboard" && "Dashboard Tổng quan"}
             {activeTab === "menu" && "Quản lý Menu Items"}
             {activeTab === "tables" && "Quản lý Sơ đồ bàn"}
@@ -445,20 +453,20 @@ function DashboardView() {
 
   return (
     <div className="dashboard-grid animate-fade-in">
-      <div className="glass stat-card" style={{ borderLeft: "4px solid var(--accent-secondary)" }}>
+      <div className="glass stat-card">
         <h3 style={{ fontSize: "0.9rem", color: "var(--text-secondary)", fontWeight: 500 }}>Doanh thu hôm nay</h3>
-        <p className="stat-value" style={{ color: "var(--accent-secondary)" }}>{stats.todayRevenue.toLocaleString()}đ</p>
+        <p className="stat-value" style={{ color: "var(--text-primary)" }}>{stats.todayRevenue.toLocaleString()}đ</p>
         <span className="stat-change">Từ các hoá đơn đã thanh toán hoàn thành</span>
       </div>
-      <div className="glass stat-card" style={{ borderLeft: "4px solid var(--accent-primary)" }}>
+      <div className="glass stat-card">
         <h3 style={{ fontSize: "0.9rem", color: "var(--text-secondary)", fontWeight: 500 }}>Bàn đang hoạt động</h3>
-        <p className="stat-value">{stats.activeSessions}</p>
+        <p className="stat-value" style={{ color: "var(--text-primary)" }}>{stats.activeSessions}</p>
         <span className="stat-change">{stats.waitingPayment} bàn đang chờ thanh toán</span>
       </div>
-      <div className="glass stat-card" style={{ borderLeft: "4px solid var(--accent-danger)" }}>
+      <div className="glass stat-card">
         <h3 style={{ fontSize: "0.9rem", color: "var(--text-secondary)", fontWeight: 500 }}>Trạng thái kết nối</h3>
-        <p className="stat-value" style={{ fontSize: "1.5rem", marginTop: "16px", display: "flex", alignItems: "center", gap: "8px" }}>
-          <Activity size={24} style={{ color: "var(--accent-secondary)" }} /> Ổn định
+        <p className="stat-value" style={{ fontSize: "1.5rem", marginTop: "16px", display: "flex", alignItems: "center", gap: "8px", color: "#10B981" }}>
+          <Activity size={24} style={{ color: "#10B981" }} /> Ổn định
         </p>
         <span className="stat-change">Đồng bộ dữ liệu thời gian thực sảnh/bếp</span>
       </div>
