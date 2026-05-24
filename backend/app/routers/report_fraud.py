@@ -48,33 +48,50 @@ def get_fraud_summary(
             AuditLog.created_at <= end_dt
         ).all()
 
+    from datetime import timedelta
     # For P-05 check (no reason cancel on cooking items)
-    # We will simulate the detection for the spec
     staff_stats = {}
     
-    import random
+    days_map = ['T2', 'T3', 'T4', 'T5', 'T6', 'T7', 'CN']
+    heatmap_matrix = [[0 for _ in range(24)] for _ in range(7)]
     
-    # We'll just group by staff and assign mock random values based on actual log count
     for log, staff in logs:
+        # Heatmap calculation
+        local_dt = log.created_at + timedelta(hours=7) # Convert UTC to GMT+7
+        day_idx = local_dt.weekday()
+        hour = local_dt.hour
+        if 8 <= hour <= 22:
+            heatmap_matrix[day_idx][hour] += 1
+            
         if staff.id not in staff_stats:
             staff_stats[staff.id] = {
                 "staff_id": staff.id,
-                "display_name": staff.full_name,
+                "display_name": staff.display_name,
                 "role": staff.role,
                 "total_cancels": 0,
                 "cancel_breakdown": {"from_pending": 0, "from_confirmed": 0, "from_cooking": 0},
-                "patterns_triggered": []
+                "patterns_triggered": [],
+                "no_reason_cooking_cancels": 0
             }
         
         staff_stats[staff.id]["total_cancels"] += 1
         
-        # Simulate breakdown
-        rand_stage = random.choice(["from_pending", "from_confirmed", "from_cooking"])
-        staff_stats[staff.id]["cancel_breakdown"][rand_stage] += 1
+        before_status = "pending"
+        if log.before_state and isinstance(log.before_state, dict):
+            before_status = log.before_state.get("status", "pending")
+            
+        if before_status == "cooking":
+            staff_stats[staff.id]["cancel_breakdown"]["from_cooking"] += 1
+            if not log.reason or len(str(log.reason).strip()) < 3:
+                staff_stats[staff.id]["no_reason_cooking_cancels"] += 1
+        elif before_status == "confirmed":
+            staff_stats[staff.id]["cancel_breakdown"]["from_confirmed"] += 1
+        else:
+            staff_stats[staff.id]["cancel_breakdown"]["from_pending"] += 1
         
     # Process patterns
     staff_risk_list = []
-    total_cancellations = 0
+    total_cancellations = len(logs)
     critical_violations = 0
     pattern_summary = {
         "P-01": {"count": 0, "severity": "WARNING"},
@@ -86,11 +103,9 @@ def get_fraud_summary(
     }
     
     for s_id, stats in staff_stats.items():
-        total_cancellations += stats["total_cancels"]
         score = 0
         patterns = []
         
-        # Simulate rules
         if stats["cancel_breakdown"]["from_cooking"] > MOCK_CONFIG["P03_cooking_cancel_limit"]:
             patterns.append("P-03")
             score += 40
@@ -101,7 +116,7 @@ def get_fraud_summary(
             score += 10
             pattern_summary["P-01"]["count"] += 1
             
-        if stats["cancel_breakdown"]["from_cooking"] > 0 and random.random() < 0.1:
+        if stats["no_reason_cooking_cancels"] > 0:
             patterns.append("P-05")
             score += 100
             pattern_summary["P-05"]["count"] += 1
@@ -122,13 +137,24 @@ def get_fraud_summary(
                 
     staff_risk_list.sort(key=lambda x: x["risk_score"], reverse=True)
 
+    heatmap_data = []
+    for d_idx, day_str in enumerate(days_map):
+        for h in range(8, 23):
+            heatmap_data.append({
+                "day": day_str,
+                "dayIdx": d_idx,
+                "hour": h,
+                "riskLevel": heatmap_matrix[d_idx][h]
+            })
+
     return api_response({
         "period": {"from": date_from, "to": date_to},
         "total_cancellations": total_cancellations,
         "flagged_staff_count": len(staff_risk_list),
         "critical_violations": critical_violations,
         "staff_risk_list": staff_risk_list,
-        "pattern_summary": [{"pattern_id": k, "count": v["count"], "severity": v["severity"]} for k,v in pattern_summary.items() if v["count"] > 0]
+        "pattern_summary": [{"pattern_id": k, "count": v["count"], "severity": v["severity"]} for k,v in pattern_summary.items() if v["count"] > 0],
+        "heatmap_data": heatmap_data
     })
 
 @router.get("/staff/{staff_id}/timeline")

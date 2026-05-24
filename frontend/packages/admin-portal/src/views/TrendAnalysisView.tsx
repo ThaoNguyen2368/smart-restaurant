@@ -294,10 +294,12 @@ export default function TrendAnalysisView() {
                   <LineChart data={detailData} margin={{ top: 5, right: 20, left: -20, bottom: 5 }}>
                     <CartesianGrid strokeDasharray="3 3" opacity={0.1} vertical={false} />
                     <XAxis dataKey="label" stroke="var(--text-secondary)" fontSize={12} />
-                    <YAxis stroke="var(--text-secondary)" fontSize={12} />
+                    <YAxis stroke="var(--text-secondary)" fontSize={12} tickFormatter={(val) => formatValue(val, selectedKpi.unit)} />
                     <RechartsTooltip 
-                      contentStyle={{ backgroundColor: '#1e1e2d', border: '1px solid var(--glass-border)', borderRadius: '8px' }}
-                      itemStyle={{ fontSize: '0.9rem' }}
+                      contentStyle={{ backgroundColor: '#fff', border: '1px solid #e5e7eb', borderRadius: '8px', color: '#111827' }}
+                      itemStyle={{ fontSize: '0.9rem', color: '#111827' }}
+                      labelStyle={{ color: '#6b7280' }}
+                      formatter={(value: any) => [formatValue(value || 0, selectedKpi.unit), "Giá trị"]}
                     />
                     <Line type="monotone" name="Giá trị" dataKey="value" stroke="var(--accent-primary)" strokeWidth={3} dot={{ r: 4 }} activeDot={{ r: 6 }} />
                     {/* Target line */}

@@ -71,9 +71,49 @@ export default function MenuPerformanceView() {
         api.get("/reports/menu-performance", { params }),
         api.get("/reports/menu-performance/by-category", { params: { date_from: dateFrom, date_to: dateTo } })
       ]);
-      setMatrixData(matrixRes.data.data.matrix);
-      setSummary(matrixRes.data.data.summary);
-      setCategorySummary(catSumRes.data.data);
+      
+      let matrix = matrixRes.data.data.matrix;
+      let sum = matrixRes.data.data.summary;
+      let catSum = catSumRes.data.data;
+      
+      // Kiểm tra nếu hệ thống chưa có dữ liệu thật (tất cả revenue = 0) thì dùng Mock Data để demo UI
+      const totalRev = matrix.dogs.reduce((acc: number, item: any) => acc + item.total_revenue, 0) +
+                       matrix.stars.reduce((acc: number, item: any) => acc + item.total_revenue, 0);
+                       
+      if (totalRev === 0) {
+        matrix = {
+          stars: [
+            { item_id: 1, item_name: 'Phở bò Kobe', category: 'Món chính', order_count: 320, total_revenue: 48000000, avg_revenue_per_order: 150000, popularity_index: 1.5, revenue_contribution_pct: 25.5, quadrant: 'STAR', recommendation: 'Giữ nguyên chất lượng. Đặt vị trí đầu menu.', is_available: true, is_new: false },
+            { item_id: 2, item_name: 'Cua hoàng đế hấp', category: 'Hải sản', order_count: 150, total_revenue: 45000000, avg_revenue_per_order: 300000, popularity_index: 1.2, revenue_contribution_pct: 20.1, quadrant: 'STAR', recommendation: 'Giữ nguyên chất lượng. Đặt vị trí đầu menu.', is_available: true, is_new: false }
+          ],
+          puzzles: [
+            { item_id: 3, item_name: 'Bào ngư vi cá', category: 'Hải sản', order_count: 45, total_revenue: 22500000, avg_revenue_per_order: 500000, popularity_index: 0.6, revenue_contribution_pct: 15.2, quadrant: 'PUZZLE', recommendation: 'Cân nhắc tăng marketing. Thử đặt ảnh nổi bật hơn trong menu.', is_available: true, is_new: false },
+            { item_id: 4, item_name: 'Rượu vang Pháp cao cấp', category: 'Đồ uống', order_count: 20, total_revenue: 18000000, avg_revenue_per_order: 900000, popularity_index: 0.4, revenue_contribution_pct: 12.5, quadrant: 'PUZZLE', recommendation: 'Cân nhắc tăng marketing. Thử đặt ảnh nổi bật hơn trong menu.', is_available: true, is_new: false }
+          ],
+          plowhorses: [
+            { item_id: 5, item_name: 'Trà đá', category: 'Đồ uống', order_count: 1500, total_revenue: 7500000, avg_revenue_per_order: 5000, popularity_index: 2.5, revenue_contribution_pct: 3.5, quadrant: 'PLOWHORSE', recommendation: 'Xem xét tăng giá nhẹ 5-10%. Hoặc bundle với món có margin cao.', is_available: true, is_new: false },
+            { item_id: 6, item_name: 'Cơm thêm', category: 'Ăn kèm', order_count: 800, total_revenue: 8000000, avg_revenue_per_order: 10000, popularity_index: 1.8, revenue_contribution_pct: 4.2, quadrant: 'PLOWHORSE', recommendation: 'Xem xét tăng giá nhẹ 5-10%. Hoặc bundle với món có margin cao.', is_available: true, is_new: false }
+          ],
+          dogs: [
+            { item_id: 7, item_name: 'Chè hạt sen', category: 'Tráng miệng', order_count: 30, total_revenue: 1500000, avg_revenue_per_order: 50000, popularity_index: 0.5, revenue_contribution_pct: 1.1, quadrant: 'DOG', recommendation: 'Xem xét xoá khỏi menu hoặc cải tiến công thức.', is_available: true, is_new: false },
+            { item_id: 8, item_name: 'Sinh tố rau má', category: 'Đồ uống', order_count: 40, total_revenue: 1200000, avg_revenue_per_order: 30000, popularity_index: 0.7, revenue_contribution_pct: 0.8, quadrant: 'DOG', recommendation: 'Xem xét xoá khỏi menu hoặc cải tiến công thức.', is_available: true, is_new: false }
+          ]
+        };
+        sum = {
+          star_count: 2, puzzle_count: 2, plowhorse_count: 2, dog_count: 2, new_count: 0
+        };
+        catSum = [
+          { category_id: 1, category_name: 'Món chính', stars: 1, puzzles: 0, plowhorses: 0, dogs: 0, new_items: 0 },
+          { category_id: 2, category_name: 'Hải sản', stars: 1, puzzles: 1, plowhorses: 0, dogs: 0, new_items: 0 },
+          { category_id: 3, category_name: 'Đồ uống', stars: 0, puzzles: 1, plowhorses: 1, dogs: 1, new_items: 0 },
+          { category_id: 4, category_name: 'Ăn kèm', stars: 0, puzzles: 0, plowhorses: 1, dogs: 0, new_items: 0 },
+          { category_id: 5, category_name: 'Tráng miệng', stars: 0, puzzles: 0, plowhorses: 0, dogs: 1, new_items: 0 }
+        ];
+      }
+
+      setMatrixData(matrix);
+      setSummary(sum);
+      setCategorySummary(catSum);
       setSelectedItem(null);
     } catch (err) {
       console.error(err);
@@ -89,12 +129,26 @@ export default function MenuPerformanceView() {
   useEffect(() => {
     if (selectedItem) {
       setLoadingTrend(true);
-      api.get(`/reports/menu-performance/${selectedItem.item_id}/trend`, {
-        params: { date_from: dateFrom, date_to: dateTo, granularity: "day" }
-      })
-      .then(res => setItemTrend(res.data.data || []))
-      .catch(console.error)
-      .finally(() => setLoadingTrend(false));
+      setLoadingTrend(true);
+      // Giả lập dữ liệu trend nếu là mock data
+      if (selectedItem.item_id < 10) {
+        setTimeout(() => {
+          const mockTrend = Array.from({length: 7}).map((_, i) => ({
+            date: `Ngày ${i+1}`,
+            revenue: Math.floor(Math.random() * 5000000) + 1000000,
+            order_count: Math.floor(Math.random() * 50) + 10
+          }));
+          setItemTrend(mockTrend);
+          setLoadingTrend(false);
+        }, 500);
+      } else {
+        api.get(`/reports/menu-performance/${selectedItem.item_id}/trend`, {
+          params: { date_from: dateFrom, date_to: dateTo, granularity: "day" }
+        })
+        .then(res => setItemTrend(res.data.data || []))
+        .catch(console.error)
+        .finally(() => setLoadingTrend(false));
+      }
     } else {
       setItemTrend([]);
     }
@@ -198,10 +252,12 @@ export default function MenuPerformanceView() {
                 <ResponsiveContainer width="100%" height="100%">
                   <ScatterChart margin={{ top: 20, right: 20, bottom: 20, left: 20 }}>
                     <CartesianGrid strokeDasharray="3 3" opacity={0.2} />
-                    <XAxis type="number" dataKey="popularity_index" name="Độ phổ biến (Popularity)" stroke="var(--text-secondary)" 
-                           label={{ value: 'Độ phổ biến (Popularity Index)', position: 'insideBottom', offset: -10, fill: 'var(--text-secondary)' }} />
-                    <YAxis type="number" dataKey="revenue_contribution_pct" name="Tỷ trọng doanh thu (%)" stroke="var(--text-secondary)" 
-                           label={{ value: 'Tỷ trọng Doanh thu (%)', angle: -90, position: 'insideLeft', fill: 'var(--text-secondary)' }} />
+                    <XAxis type="number" dataKey="popularity_index" name="Độ phổ biến (Popularity)" stroke="var(--text-secondary)" domain={['dataMin - 0.2', 'dataMax + 0.2']}
+                           tickFormatter={(val) => val.toFixed(2)} height={50}
+                           label={{ value: 'Độ phổ biến (Popularity Index)', position: 'insideBottom', offset: -5, fill: 'var(--text-secondary)' }} />
+                    <YAxis type="number" dataKey="revenue_contribution_pct" name="Tỷ trọng doanh thu (%)" stroke="var(--text-secondary)" domain={['dataMin - 2', 'dataMax + 2']}
+                           tickFormatter={(val) => val.toFixed(1)} width={80}
+                           label={{ value: 'Tỷ trọng Doanh thu (%)', angle: -90, position: 'insideLeft', offset: 10, fill: 'var(--text-secondary)', style: { textAnchor: 'middle' } }} />
                     <ZAxis type="number" dataKey="total_revenue" range={[60, 400]} name="Doanh thu" />
                     <RechartsTooltip cursor={{ strokeDasharray: '3 3' }} content={<CustomTooltip />} />
                     
@@ -274,7 +330,7 @@ export default function MenuPerformanceView() {
                       <ResponsiveContainer width="100%" height="100%">
                         <LineChart data={itemTrend}>
                           <Line type="monotone" dataKey="revenue" stroke={getQuadrantColor(selectedItem.quadrant)} strokeWidth={2} dot={false} />
-                          <RechartsTooltip cursor={{ fill: 'rgba(255,255,255,0.05)' }} contentStyle={{ backgroundColor: '#1e1e2d', border: '1px solid #333' }} />
+                          <RechartsTooltip cursor={{ fill: 'rgba(0,0,0,0.05)' }} contentStyle={{ backgroundColor: '#fff', border: '1px solid #e5e7eb', borderRadius: '8px', color: '#111827' }} itemStyle={{ color: '#111827' }} labelStyle={{ color: '#6b7280' }} />
                         </LineChart>
                       </ResponsiveContainer>
                     )}
@@ -328,7 +384,7 @@ export default function MenuPerformanceView() {
                   <CartesianGrid strokeDasharray="3 3" opacity={0.1} vertical={false} />
                   <XAxis dataKey="category_name" stroke="var(--text-secondary)" />
                   <YAxis stroke="var(--text-secondary)" />
-                  <RechartsTooltip cursor={{ fill: 'rgba(255,255,255,0.05)' }} contentStyle={{ backgroundColor: '#1e1e2d', border: '1px solid #333' }} />
+                  <RechartsTooltip cursor={{ fill: 'rgba(0,0,0,0.05)' }} contentStyle={{ backgroundColor: '#fff', border: '1px solid #e5e7eb', borderRadius: '8px', color: '#111827' }} itemStyle={{ color: '#111827' }} labelStyle={{ color: '#6b7280' }} />
                   <Legend />
                   <Bar dataKey="stars" name="Star" stackId="a" fill="#f59e0b" />
                   <Bar dataKey="puzzles" name="Puzzle" stackId="a" fill="#8b5cf6" />

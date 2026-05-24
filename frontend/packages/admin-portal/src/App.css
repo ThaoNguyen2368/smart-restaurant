@@ -1005,3 +1005,37 @@ input[type="date"]:focus {
   from { opacity: 0; transform: translateY(4px); }
   to { opacity: 1; transform: translateY(0); }
 }
+
+/* Filter Bar & Buttons */
+.filter-bar {
+  display: flex;
+  background: #F3F4F6;
+  padding: 4px;
+  border-radius: 8px;
+  border: 1px solid #E5E7EB;
+  gap: 4px;
+}
+
+.filter-btn {
+  padding: 6px 16px;
+  border: none;
+  background: transparent;
+  color: #6B7280;
+  border-radius: 6px;
+  cursor: pointer;
+  font-weight: 600;
+  font-size: 0.85rem;
+  font-family: inherit;
+  transition: all 0.2s ease;
+}
+
+.filter-btn:hover {
+  color: #111827;
+  background: rgba(0, 0, 0, 0.05);
+}
+
+.filter-btn.active {
+  background: #FFFFFF;
+  color: #6366F1;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.1), 0 1px 2px rgba(0,0,0,0.06);
+}

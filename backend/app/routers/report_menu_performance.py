@@ -25,7 +25,6 @@ def get_base_item_stats(db: DBSession, start_dt: datetime, end_dt: datetime, cat
         MenuItem.category_id,
         Category.name.label("category_name"),
         MenuItem.is_available,
-        MenuItem.created_at.label("item_created_at"),
         func.sum(OrderDetail.quantity).label("order_count"),
         func.sum(OrderDetail.quantity * OrderDetail.unit_price).label("total_revenue")
     ).join(MenuItem, OrderDetail.item_id == MenuItem.id)\
@@ -45,8 +44,7 @@ def get_base_item_stats(db: DBSession, start_dt: datetime, end_dt: datetime, cat
         MenuItem.name,
         MenuItem.category_id,
         Category.name,
-        MenuItem.is_available,
-        MenuItem.created_at
+        MenuItem.is_available
     ).all()
 
 @router.get("")
@@ -67,8 +65,8 @@ def get_menu_matrix_data(
 
     items_stats = get_base_item_stats(db, start_dt, end_dt, category_id)
 
-    total_order_count_all_items = sum([getattr(row, "order_count") or 0 for row in items_stats]) or 1
-    total_revenue_all_items = sum([getattr(row, "total_revenue") or 0 for row in items_stats]) or 1
+    total_order_count_all_items = sum([int(getattr(row, "order_count") or 0) for row in items_stats]) or 1
+    total_revenue_all_items = sum([float(getattr(row, "total_revenue") or 0) for row in items_stats]) or 1.0
     total_menu_items = len(items_stats) or 1
     
     avg_popularity = 1.0 / total_menu_items
@@ -88,11 +86,6 @@ def get_menu_matrix_data(
         order_count = int(row.order_count or 0)
         total_revenue = float(row.total_revenue or 0)
         is_available = row.is_available
-        item_created_at = row.item_created_at
-
-        # Check new item
-        days_since_created = (now - item_created_at).days if item_created_at else 100
-        is_new = days_since_created < 7
 
         popularity_index = (order_count / total_order_count_all_items) / avg_popularity
         revenue_contribution_pct = (total_revenue / total_revenue_all_items)
@@ -100,22 +93,18 @@ def get_menu_matrix_data(
         is_high_popularity = popularity_index > 1.0
         is_high_contribution = revenue_contribution_pct > avg_revenue_contribution
         
-        quadrant = "NEW"
-        recommendation = "Món mới, cần thêm thời gian để phân tích."
+        quadrant = "DOG"
+        recommendation = "Xem xét xoá khỏi menu hoặc cải tiến công thức. Tham khảo ý kiến bếp."
         
-        if not is_new:
-            if is_high_popularity and is_high_contribution:
-                quadrant = "STAR"
-                recommendation = "Giữ nguyên chất lượng. Đặt vị trí đầu menu."
-            elif not is_high_popularity and is_high_contribution:
-                quadrant = "PUZZLE"
-                recommendation = "Cân nhắc tăng marketing. Thử đặt ảnh nổi bật hơn trong menu."
-            elif is_high_popularity and not is_high_contribution:
-                quadrant = "PLOWHORSE"
-                recommendation = "Xem xét tăng giá nhẹ 5-10%. Hoặc bundle với món có margin cao hơn."
-            else:
-                quadrant = "DOG"
-                recommendation = "Xem xét xoá khỏi menu hoặc cải tiến công thức. Tham khảo ý kiến bếp."
+        if is_high_popularity and is_high_contribution:
+            quadrant = "STAR"
+            recommendation = "Giữ nguyên chất lượng. Đặt vị trí đầu menu."
+        elif not is_high_popularity and is_high_contribution:
+            quadrant = "PUZZLE"
+            recommendation = "Cân nhắc tăng marketing. Thử đặt ảnh nổi bật hơn trong menu."
+        elif is_high_popularity and not is_high_contribution:
+            quadrant = "PLOWHORSE"
+            recommendation = "Xem xét tăng giá nhẹ 5-10%. Hoặc bundle với món có margin cao hơn."
 
         item_data = {
             "item_id": item_id,
@@ -129,7 +118,7 @@ def get_menu_matrix_data(
             "quadrant": quadrant,
             "recommendation": recommendation,
             "is_available": is_available,
-            "is_new": is_new
+            "is_new": False
         }
 
         if quadrant == "STAR":
@@ -227,8 +216,8 @@ def get_category_summary(
 
     items_stats = get_base_item_stats(db, start_dt, end_dt)
     
-    total_order_count_all_items = sum([getattr(row, "order_count") or 0 for row in items_stats]) or 1
-    total_revenue_all_items = sum([getattr(row, "total_revenue") or 0 for row in items_stats]) or 1
+    total_order_count_all_items = sum([int(getattr(row, "order_count") or 0) for row in items_stats]) or 1
+    total_revenue_all_items = sum([float(getattr(row, "total_revenue") or 0) for row in items_stats]) or 1.0
     total_menu_items = len(items_stats) or 1
     
     avg_popularity = 1.0 / total_menu_items
@@ -252,12 +241,6 @@ def get_category_summary(
                 "dogs": 0,
                 "new_items": 0
             }
-            
-        item_created_at = row.item_created_at
-        days_since_created = (now - item_created_at).days if item_created_at else 100
-        if days_since_created < 7:
-            category_summary[cat_id]["new_items"] += 1
-            continue
 
         order_count = int(row.order_count or 0)
         total_revenue = float(row.total_revenue or 0)

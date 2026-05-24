@@ -176,7 +176,7 @@ def get_trend_report(
             "daily_series": daily_series
         })
         
-        return api_response({
+    return api_response({
         "period": period,
         "current_range": {"from": current_start.isoformat(), "to": now.isoformat()},
         "previous_range": {"from": previous_start.isoformat(), "to": current_start.isoformat()},

@@ -102,26 +102,7 @@ export default function FraudDetectionView() {
     }
   };
 
-  // Generate mock heatmap data (Days x Hours)
-  const generateHeatmapData = () => {
-    const days = ['T2', 'T3', 'T4', 'T5', 'T6', 'T7', 'CN'];
-    const data = [];
-    for (let dayIdx = 0; dayIdx < days.length; dayIdx++) {
-      for (let hour = 8; hour < 23; hour++) {
-        // More anomalies in late hours
-        const riskLevel = (hour > 20 || hour < 10) ? Math.random() * 10 : Math.random() * 3;
-        data.push({
-          day: days[dayIdx],
-          dayIdx: dayIdx,
-          hour: hour,
-          riskLevel: Math.floor(riskLevel)
-        });
-      }
-    }
-    return data;
-  };
-  
-  const heatmapData = generateHeatmapData();
+  const heatmapData = data?.heatmap_data || [];
 
   if (loading && !data) {
     return (
@@ -202,9 +183,9 @@ export default function FraudDetectionView() {
               <XAxis type="number" dataKey="hour" name="Giờ" domain={[8, 22]} tickCount={15} stroke="var(--text-secondary)" />
               <YAxis type="category" dataKey="day" name="Ngày" stroke="var(--text-secondary)" />
               <ZAxis type="number" dataKey="riskLevel" range={[50, 400]} />
-              <RechartsTooltip cursor={{ strokeDasharray: '3 3' }} contentStyle={{ backgroundColor: '#1e1e2d', border: '1px solid #333' }} />
+              <RechartsTooltip cursor={{ strokeDasharray: '3 3' }} contentStyle={{ backgroundColor: '#fff', border: '1px solid #e5e7eb', borderRadius: '8px', color: '#111827' }} itemStyle={{ color: '#111827' }} labelStyle={{ color: '#6b7280' }} />
               <Scatter name="Vi phạm" data={heatmapData}>
-                {heatmapData.map((entry, index) => (
+                {heatmapData.map((entry: any, index: number) => (
                   <Cell key={`cell-${index}`} fill={entry.riskLevel > 5 ? '#ef4444' : (entry.riskLevel > 2 ? '#eab308' : '#3b82f6')} opacity={0.8} />
                 ))}
               </Scatter>
