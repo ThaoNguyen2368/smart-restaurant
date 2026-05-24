@@ -28,7 +28,7 @@ def calculate_kpis(db: DBSession, start_dt: datetime, end_dt: datetime):
     ).join(
         OrderDetail, AuditLog.entity_id == OrderDetail.id
     ).filter(
-        AuditLog.action == "confirm_order",
+        AuditLog.action.in_(["update_status_cooking", "update_status_confirmed"]),
         AuditLog.entity_type == "order_detail",
         AuditLog.created_at >= start_dt,
         AuditLog.created_at <= end_dt
@@ -153,15 +153,22 @@ def get_trend_report(
         else:
             target_met = cur_val <= kpi["target"]
             
-        # Generate mock daily series for sparkline
-        # In a real app we would aggregate by day
-        import random
-        base_cur = cur_val if cur_val > 0 else 10
-        base_prev = prev_val if prev_val > 0 else 10
-        daily_series = {
-            "current": [max(0, base_cur + random.uniform(-base_cur*0.2, base_cur*0.2)) for _ in range(7)],
-            "previous": [max(0, base_prev + random.uniform(-base_prev*0.2, base_prev*0.2)) for _ in range(7)]
-        }
+        # Generate actual daily series for sparkline
+        # For simplicity and performance in demo, we'll do 7 daily bins
+        daily_series = {"current": [], "previous": []}
+        
+        # Build 7-bin series
+        bin_duration = (now - current_start) / 7
+        for i in range(7):
+            bin_start = current_start + (bin_duration * i)
+            bin_end = current_start + (bin_duration * (i + 1))
+            kpis_bin = calculate_kpis(db, bin_start, bin_end)
+            daily_series["current"].append(max(0, kpis_bin.get(kpi["id"], 0)))
+            
+            p_bin_start = previous_start + (bin_duration * i)
+            p_bin_end = previous_start + (bin_duration * (i + 1))
+            p_kpis_bin = calculate_kpis(db, p_bin_start, p_bin_end)
+            daily_series["previous"].append(max(0, p_kpis_bin.get(kpi["id"], 0)))
         
         results.append({
             "id": kpi["id"],
@@ -194,23 +201,74 @@ def get_kpi_detail(
 ):
     require_roles("admin", "manager")(current_user)
     
-    # This is a mock drill-down endpoint as requested in the plan
-    import random
-    
-    breakdown_data = []
-    if breakdown == "hour":
-        labels = [f"{i:02d}:00" for i in range(8, 23)]
-    elif breakdown == "staff":
-        labels = ["Nhân viên A", "Nhân viên B", "Nhân viên C", "Nhân viên D"]
-    else:
-        labels = ["T2", "T3", "T4", "T5", "T6", "T7", "CN"]
+    # Actual drill-down data
+    try:
+        start_dt = datetime.fromisoformat(date_from).replace(tzinfo=timezone.utc)
+        end_dt = datetime.fromisoformat(date_to).replace(hour=23, minute=59, second=59, tzinfo=timezone.utc)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid date format")
         
-    for label in labels:
-        base_val = 100 if kpi_id == "KPI-01" else (5 if kpi_id == "KPI-02" else 10)
-        breakdown_data.append({
-            "label": label,
-            "value": max(0, base_val + random.uniform(-base_val*0.3, base_val*0.3)),
-            "sample_size": random.randint(10, 50)
-        })
+    breakdown_data = []
+    
+    # We will slice the date range based on breakdown
+    # For staff, we don't slice by time, but group by staff
+    if breakdown == "staff":
+        staff_list = db.query(StaffUser).all()
+        for staff in staff_list:
+            if kpi_id == "KPI-01":
+                val = db.query(func.avg(func.extract('epoch', AuditLog.created_at - OrderDetail.created_at)))\
+                    .join(OrderDetail, AuditLog.entity_id == OrderDetail.id)\
+                    .filter(AuditLog.action.in_(["update_status_cooking", "update_status_confirmed"]), AuditLog.entity_type == "order_detail", AuditLog.actor_id == staff.id, AuditLog.created_at >= start_dt, AuditLog.created_at <= end_dt).scalar()
+                samples = db.query(func.count(AuditLog.id))\
+                    .filter(AuditLog.action.in_(["update_status_cooking", "update_status_confirmed"]), AuditLog.entity_type == "order_detail", AuditLog.actor_id == staff.id, AuditLog.created_at >= start_dt, AuditLog.created_at <= end_dt).scalar() or 0
+                if samples > 0: breakdown_data.append({"label": staff.full_name, "value": float(val or 0), "sample_size": samples})
+            elif kpi_id == "KPI-02":
+                total = db.query(func.count(OrderDetail.id)).filter(OrderDetail.created_at >= start_dt, OrderDetail.created_at <= end_dt).scalar() or 1
+                val = db.query(func.count(OrderDetail.id)).filter(OrderDetail.cooking_status == 'cancelled', OrderDetail.cancelled_by == staff.id, OrderDetail.cancelled_at >= start_dt, OrderDetail.cancelled_at <= end_dt).scalar() or 0
+                if val > 0: breakdown_data.append({"label": staff.full_name, "value": (val/total)*100.0, "sample_size": val})
+            elif kpi_id == "KPI-03":
+                val = db.query(func.count(AuditLog.id)).filter(AuditLog.action == "transfer_table", AuditLog.actor_id == staff.id, AuditLog.created_at >= start_dt, AuditLog.created_at <= end_dt).scalar() or 0
+                if val > 0: breakdown_data.append({"label": staff.full_name, "value": val, "sample_size": val})
+            # Skip KPI-04/05 for staff as they are harder to assign
+    else:
+        # Time-based slicing
+        if breakdown == "hour":
+            slices = 15 # 8:00 to 23:00
+            step = timedelta(hours=1)
+            base_t = start_dt.replace(hour=8, minute=0, second=0)
+        else:
+            slices = (end_dt - start_dt).days + 1
+            step = timedelta(days=1)
+            base_t = start_dt.replace(hour=0, minute=0, second=0)
+            
+        for i in range(slices):
+            s_dt = base_t + step * i
+            e_dt = s_dt + step
+            
+            # Don't query out of bounds
+            if s_dt > end_dt: break
+            
+            if breakdown == "hour":
+                label = f"{s_dt.hour:02d}:00"
+            else:
+                days_map = ["T2", "T3", "T4", "T5", "T6", "T7", "CN"]
+                label = days_map[s_dt.weekday()]
+                
+            kpis = calculate_kpis(db, s_dt, e_dt)
+            val = kpis.get(kpi_id, 0)
+            
+            # Estimate sample size based on total orders
+            samples = db.query(func.count(Order.id)).filter(Order.created_at >= s_dt, Order.created_at <= e_dt).scalar() or 0
+            
+            if val > 0 or samples > 0:
+                breakdown_data.append({
+                    "label": label,
+                    "value": val,
+                    "sample_size": samples
+                })
+                
+    # Sort for non-time series
+    if breakdown == "staff":
+        breakdown_data.sort(key=lambda x: x["value"], reverse=True)
         
     return api_response(breakdown_data)

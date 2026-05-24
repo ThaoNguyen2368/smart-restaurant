@@ -181,11 +181,11 @@ export default function FraudDetectionView() {
             <ScatterChart margin={{ top: 20, right: 20, bottom: 20, left: 20 }}>
               <CartesianGrid strokeDasharray="3 3" opacity={0.1} />
               <XAxis type="number" dataKey="hour" name="Giờ" domain={[8, 22]} tickCount={15} stroke="var(--text-secondary)" />
-              <YAxis type="category" dataKey="day" name="Ngày" stroke="var(--text-secondary)" />
+              <YAxis type="category" dataKey="day" name="Ngày" stroke="var(--text-secondary)" allowDuplicatedCategory={false} />
               <ZAxis type="number" dataKey="riskLevel" range={[50, 400]} />
               <RechartsTooltip cursor={{ strokeDasharray: '3 3' }} contentStyle={{ backgroundColor: '#fff', border: '1px solid #e5e7eb', borderRadius: '8px', color: '#111827' }} itemStyle={{ color: '#111827' }} labelStyle={{ color: '#6b7280' }} />
-              <Scatter name="Vi phạm" data={heatmapData}>
-                {heatmapData.map((entry: any, index: number) => (
+              <Scatter name="Vi phạm" data={heatmapData.filter((d: any) => d.riskLevel > 0)}>
+                {heatmapData.filter((d: any) => d.riskLevel > 0).map((entry: any, index: number) => (
                   <Cell key={`cell-${index}`} fill={entry.riskLevel > 5 ? '#ef4444' : (entry.riskLevel > 2 ? '#eab308' : '#3b82f6')} opacity={0.8} />
                 ))}
               </Scatter>
