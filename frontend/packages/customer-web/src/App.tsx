@@ -11,6 +11,7 @@ function App() {
         <Routes>
           {/* Default entry without session requires QR scan */}
           <Route path="/" element={<ScanQR />} />
+          <Route path="/qr/:tableNumber" element={<ScanQR />} />
           <Route path="/menu" element={<Home />} />
           <Route path="/cart" element={<CartPage />} />
           <Route path="/tracking" element={<OrderTracker />} />

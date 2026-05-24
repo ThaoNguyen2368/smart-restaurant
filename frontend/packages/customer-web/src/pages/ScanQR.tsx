@@ -1,8 +1,8 @@
 import React, { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { api, setSessionId } from '../api';
 import { useCustomerStore } from '../store';
-import { QrCode, Loader2, Camera, ArrowRight } from 'lucide-react'; // Đã thêm ArrowRight
+import { Loader2, Camera, ArrowRight } from 'lucide-react'; // Đã thêm ArrowRight
 import { Html5QrcodeScanner } from 'html5-qrcode';
 
 export default function ScanQR() {
@@ -10,48 +10,44 @@ export default function ScanQR() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [isScanning, setIsScanning] = useState(false);
+  const [defaultTableNumber, setDefaultTableNumber] = useState('1');
+  const [tablesList, setTablesList] = useState<{ table_number: number; status: string }[]>([]);
 
   const navigate = useNavigate();
+  const { tableNumber: pathTableNumber } = useParams();
+  const [searchParams] = useSearchParams();
+  const queryTableNumber = searchParams.get('table') || searchParams.get('table_number');
+
   const setSession = useCustomerStore((state) => state.setSession);
 
+  // Lấy trạng thái bàn từ API: Bắt đầu từ bàn 1, nếu bàn 1 có khách (occupied/waiting_payment)
+  // thì chuyển sang kiểm tra bàn 2, tiếp tục đến hết. Chọn bàn đầu tiên còn trống (status === 'empty').
   useEffect(() => {
-    let scanner: Html5QrcodeScanner | null = null;
-
-    if (isScanning) {
-      scanner = new Html5QrcodeScanner(
-        "qr-reader",
-        { fps: 10, qrbox: { width: 250, height: 250 } },
-        false
-      );
-
-      scanner.render((decodedText) => {
-        let tbNum = '';
-
-        try {
-          // Ưu tiên 1: Phân tích QR chuẩn URL (Vd: http://localhost:3001/?table=5)
-          const url = new URL(decodedText);
-          tbNum = url.searchParams.get("table") || '';
-        } catch (error) {
-          // Ưu tiên 2: Phương án dự phòng (Fallback)
-          // Nếu QR quét được không phải là link (bị lỗi parse), dùng regex lấy số
-          tbNum = decodedText.replace(/\D/g, '');
+    const fetchTables = async () => {
+      try {
+        const res = await api.get('/tables/status');
+        const tables = res.data.data;
+        if (Array.isArray(tables) && tables.length > 0) {
+          setTablesList(tables);
+          // Sắp xếp các bàn theo số thứ tự tăng dần từ bàn 1
+          const sortedTables = [...tables].sort((a, b) => a.table_number - b.table_number);
+          // Tìm bàn đầu tiên có trạng thái TRỐNG ('empty')
+          const firstEmptyTable = sortedTables.find(t => t.status === 'empty');
+          if (firstEmptyTable) {
+            setDefaultTableNumber(firstEmptyTable.table_number.toString());
+          } else {
+            // Nếu tất cả các bàn đều có khách, mặc định dùng bàn đầu tiên trong danh sách
+            setDefaultTableNumber(sortedTables[0].table_number.toString());
+          }
         }
-
-        if (tbNum) {
-          setTableNumber(tbNum);
-          setIsScanning(false);
-          scanner?.clear();
-        }
-      }, undefined);
-    }
-
-    return () => {
-      if (scanner) {
-        scanner.clear().catch(console.error);
+      } catch (err) {
+        console.error('Lỗi khi tải trạng thái bàn:', err);
       }
     };
-  }, [isScanning]);
+    fetchTables();
+  }, []);
 
+  // Hàm xử lý kết nối phiên bàn
   const processTableSession = async (tbNum: string) => {
     try {
       setLoading(true);
@@ -70,9 +66,105 @@ export default function ScanQR() {
     }
   };
 
+  // Tự động xử lý nếu có thông tin bàn từ URL (đường dẫn hoặc query param)
+  useEffect(() => {
+    const detectedTable = pathTableNumber || queryTableNumber;
+    if (detectedTable) {
+      setTableNumber(detectedTable);
+      processTableSession(detectedTable);
+    }
+  }, [pathTableNumber, queryTableNumber]);
+
+  const scannerRef = React.useRef<Html5QrcodeScanner | null>(null);
+  const tablesListRef = React.useRef(tablesList);
+
+  useEffect(() => {
+    tablesListRef.current = tablesList;
+  }, [tablesList]);
+
+  useEffect(() => {
+    if (isScanning) {
+      const scanner = new Html5QrcodeScanner(
+        "qr-reader",
+        { fps: 10, qrbox: { width: 250, height: 250 } },
+        false
+      );
+      scannerRef.current = scanner;
+
+      scanner.render((decodedText) => {
+        let tbNum = '';
+
+        try {
+          // Ưu tiên 1: Phân tích QR chuẩn URL (Vd: http://localhost:3001/?table=5 hoặc https://sr-os.local/qr/5)
+          const url = new URL(decodedText);
+          tbNum = url.searchParams.get("table") || url.searchParams.get("table_number") || '';
+          
+          if (!tbNum) {
+            // Kiểm tra khớp đường dẫn dạng /qr/5 hoặc /tables/5
+            const pathParts = url.pathname.split('/');
+            const qrIndex = pathParts.indexOf('qr');
+            if (qrIndex !== -1 && pathParts[qrIndex + 1]) {
+              tbNum = pathParts[qrIndex + 1];
+            } else {
+              const tablesIndex = pathParts.indexOf('tables');
+              if (tablesIndex !== -1 && pathParts[tablesIndex + 1]) {
+                tbNum = pathParts[tablesIndex + 1];
+              }
+            }
+          }
+          
+          if (!tbNum) {
+            const match = url.pathname.match(/\/(\d+)\/?$/);
+            if (match) {
+              tbNum = match[1];
+            }
+          }
+        } catch (error) {
+          // Ưu tiên 2: Phương án dự phòng (Fallback)
+          // Nếu QR quét được không phải là link (bị lỗi parse), dùng regex lấy số
+          tbNum = decodedText.replace(/\D/g, '');
+        }
+
+        if (tbNum) {
+          const currentTablesList = tablesListRef.current;
+          const exists = currentTablesList.some(t => t.table_number.toString() === tbNum);
+          if (currentTablesList.length > 0 && !exists) {
+            setError(`Bàn số ${tbNum} từ mã QR không tồn tại trong hệ thống.`);
+            if (scannerRef.current) {
+              scannerRef.current.clear().catch(console.error);
+              scannerRef.current = null;
+            }
+            setIsScanning(false);
+            return;
+          }
+          setTableNumber(tbNum);
+          if (scannerRef.current) {
+            scannerRef.current.clear().catch(console.error);
+            scannerRef.current = null;
+          }
+          setIsScanning(false);
+          processTableSession(tbNum); // Tự động xử lý khi quét thành công
+        }
+      }, undefined);
+    }
+
+    return () => {
+      if (scannerRef.current) {
+        scannerRef.current.clear().catch(console.error);
+        scannerRef.current = null;
+      }
+    };
+  }, [isScanning]);
+
+  const isInputValid = !tableNumber || (tablesList.length === 0 || tablesList.some(t => t.table_number.toString() === tableNumber));
+
+  const activeQRTable = (tableNumber && tablesList.some(t => t.table_number.toString() === tableNumber))
+    ? tableNumber
+    : defaultTableNumber;
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!tableNumber) return;
+    if (!tableNumber || !isInputValid) return;
     processTableSession(tableNumber);
   };
 
@@ -96,27 +188,63 @@ export default function ScanQR() {
               id="qr-reader"
               style={{ width: '100%', marginBottom: '24px', borderRadius: 'var(--border-radius-md)', overflow: 'hidden', border: 'none' }}
             ></div>
-            <button className="btn btn-secondary" style={{ width: '100%', padding: '14px' }} onClick={() => setIsScanning(false)}>
+            <button
+              className="btn btn-secondary"
+              style={{ width: '100%', padding: '14px' }}
+              onClick={() => {
+                if (scannerRef.current) {
+                  scannerRef.current.clear().catch(console.error);
+                  scannerRef.current = null;
+                }
+                setIsScanning(false);
+              }}
+            >
               Huỷ quét mã
             </button>
           </div>
         ) : (
           <div style={{ width: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
 
-            {/* Icon QR với hiệu ứng Glow đỏ */}
-            <div style={{
-              width: '88px', height: '88px', borderRadius: '50%',
-              background: 'rgba(255, 71, 87, 0.08)',
-              display: 'flex', alignItems: 'center', justifyContent: 'center',
-              color: 'var(--accent-primary)', marginBottom: '24px',
-              boxShadow: '0 0 40px rgba(255, 71, 87, 0.15)'
-            }}>
-              <QrCode size={44} strokeWidth={1.5} />
+            {/* Mã QR thực tế động */}
+            <div 
+              onClick={() => processTableSession(activeQRTable)}
+              title="Click để mô phỏng quét nhanh bàn này"
+              style={{
+                padding: '12px',
+                background: 'white',
+                borderRadius: 'var(--border-radius-md)',
+                boxShadow: '0 10px 30px rgba(0,0,0,0.06)',
+                cursor: 'pointer',
+                marginBottom: '20px',
+                transition: 'all 0.2s ease',
+                display: 'flex',
+                flexDirection: 'column',
+                alignItems: 'center',
+                gap: '8px',
+                border: '1px solid var(--glass-border)'
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.transform = 'scale(1.05)';
+                e.currentTarget.style.boxShadow = '0 12px 36px rgba(255, 71, 87, 0.1)';
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.transform = 'scale(1)';
+                e.currentTarget.style.boxShadow = '0 10px 30px rgba(0,0,0,0.06)';
+              }}
+            >
+              <img 
+                src={`https://api.qrserver.com/v1/create-qr-code/?size=160x160&data=${encodeURIComponent(window.location.origin + '?table=' + activeQRTable)}`}
+                alt="QR Code Table"
+                style={{ width: '160px', height: '160px', borderRadius: '4px' }}
+              />
+              <span style={{ fontSize: '0.8rem', color: '#666', fontWeight: 600 }}>
+                Mã QR Bàn {activeQRTable} (Click để quét nhanh)
+              </span>
             </div>
 
             <h1 style={{ fontSize: '1.6rem', marginBottom: '8px', color: 'var(--text-primary)' }}>Smart Restaurant</h1>
-            <p style={{ color: 'var(--text-secondary)', marginBottom: '36px', textAlign: 'center', fontSize: '0.95rem' }}>
-              Vui lòng quét mã QR trên bàn để bắt đầu.
+            <p style={{ color: 'var(--text-secondary)', marginBottom: '24px', textAlign: 'center', fontSize: '0.95rem' }}>
+              Quét mã QR trên bằng điện thoại hoặc click vào mã để vào bàn.
             </p>
 
             <button
@@ -163,6 +291,12 @@ export default function ScanQR() {
                 }}
               />
 
+              {!isInputValid && (
+                <p style={{ color: 'var(--accent-primary)', fontSize: '0.85rem', textAlign: 'center', margin: '-8px 0 0 0' }}>
+                  Bàn số {tableNumber} không tồn tại trong hệ thống.
+                </p>
+              )}
+
               {error && <p style={{ color: 'var(--accent-primary)', fontSize: '0.9rem', textAlign: 'center', margin: 0 }}>{error}</p>}
 
               <button
@@ -170,12 +304,12 @@ export default function ScanQR() {
                 className="btn btn-secondary"
                 style={{
                   width: '100%', padding: '14px', fontSize: '1rem',
-                  background: tableNumber ? 'var(--bg-secondary)' : 'rgba(0,0,0,0.02)',
-                  opacity: (loading || !tableNumber) ? 0.6 : 1,
-                  cursor: (loading || !tableNumber) ? 'not-allowed' : 'pointer',
-                  border: tableNumber ? '1px solid var(--glass-border)' : '1px solid transparent'
+                  background: (tableNumber && isInputValid) ? 'var(--bg-secondary)' : 'rgba(0,0,0,0.02)',
+                  opacity: (loading || !tableNumber || !isInputValid) ? 0.6 : 1,
+                  cursor: (loading || !tableNumber || !isInputValid) ? 'not-allowed' : 'pointer',
+                  border: (tableNumber && isInputValid) ? '1px solid var(--glass-border)' : '1px solid transparent'
                 }}
-                disabled={loading || !tableNumber}
+                disabled={loading || !tableNumber || !isInputValid}
               >
                 {loading ? <Loader2 className="animate-spin" /> : (
                   <>

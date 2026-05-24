@@ -15,6 +15,18 @@ from app.services import order_service, session_service, kitchen_service, menu_s
 router = APIRouter(prefix="/api", tags=["Customer"])
 
 
+from app.models.table import Table
+
+@router.get("/tables/status")
+def get_tables_status(db: DBSession = Depends(get_db)):
+    """Get status of all tables (public for QR helper)."""
+    tables = db.query(Table).order_by(Table.table_number).all()
+    return api_response([
+        {"table_number": t.table_number, "status": t.status}
+        for t in tables
+    ])
+
+
 @router.get("/tables/{table_number}/session")
 def get_session(table_number: int, db: DBSession = Depends(get_db)):
     """QR scan → get or create session."""
