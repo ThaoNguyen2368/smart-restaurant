@@ -92,10 +92,10 @@ async def cancel_detail(
             payload = decode_access_token(token)
             if not payload:
                 raise HTTPException(status_code=401, detail="Invalid token")
-            username = payload.get("sub")
-            if not username:
+            user_id = payload.get("sub")
+            if not user_id:
                 raise HTTPException(status_code=401, detail="Invalid token payload")
-            user = db.query(StaffUser).filter(StaffUser.username == username).first()
+            user = db.query(StaffUser).filter(StaffUser.id == int(user_id)).first()
             if not user or not user.is_active:
                 raise HTTPException(status_code=401, detail="User not found or inactive")
                 

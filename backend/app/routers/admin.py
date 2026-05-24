@@ -64,6 +64,20 @@ def toggle_item_availability(item_id: int, current_user: StaffUser = Depends(get
     return api_response({"id": item.id, "name": item.name, "is_available": item.is_available})
 
 
+@router.patch("/menu-items/{item_id}/availability")
+async def set_item_availability(item_id: int, is_available: bool, current_user: StaffUser = Depends(get_current_user), db: DBSession = Depends(get_db)):
+    """Manager/Admin tắt hoặc bật món (BR-009c v2.1).
+    Tắt món: cập nhật is_available=FALSE + broadcast MENU_ITEM_DISABLED tới tất cả KH.
+    Bật món: cập nhật is_available=TRUE + broadcast MENU_ITEM_ENABLED tới tất cả KH.
+    """
+    user = require_roles("admin", "manager")(current_user)
+    if is_available:
+        item = await menu_service.enable_menu_item(db, item_id)
+    else:
+        item = await menu_service.disable_menu_item(db, item_id)
+    return api_response({"id": item.id, "name": item.name, "is_available": item.is_available})
+
+
 # ─── Category CRUD (Admin & Manager) ───
 @router.get("/categories")
 def list_categories(current_user: StaffUser = Depends(get_current_user), db: DBSession = Depends(get_db)):

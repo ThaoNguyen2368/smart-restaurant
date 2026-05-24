@@ -79,6 +79,10 @@ async def cancel_order_detail(db: DBSession, detail_id: int, actor_id: int, acto
         "new_status": "cancelled",
         "cancel_reason": cancel_reason
     }))
+    # BR-010: Xóa món khỏi hàng đợi bếp ngay lập tức
+    await ws_manager.broadcast("kitchen", WSEvent.create("ITEM_CANCELLED", {
+        "order_detail_id": detail_id
+    }))
     db.refresh(detail)
     return detail
 
@@ -108,7 +112,7 @@ async def substitute_order_detail(db: DBSession, detail_id: int, new_item_id: in
         raise HTTPException(status_code=404, detail="Order detail not found")
 
     if detail.cooking_status not in ["pending", "confirmed"]:
-        raise HTTPException(status_code=400, detail="Can only substitute items in pending or confirmed status")
+        raise HTTPException(status_code=400, detail="Chỉ có thể thay thế món ở trạng thái 'pending' hoặc 'confirmed'")
 
     new_item = db.query(MenuItem).filter(MenuItem.id == new_item_id).first()
     if not new_item or not new_item.is_available:
@@ -133,5 +137,11 @@ async def substitute_order_detail(db: DBSession, detail_id: int, new_item_id: in
 
     order = db.query(Order).filter(Order.id == detail.order_id).first()
     await ws_manager.broadcast(f"orders:{order.session_id}", WSEvent.create("ORDER_UPDATED", {"order_id": order.id}))
+    # Thông báo KDS: món đổi sang món mới, trả về màu bình thường
+    await ws_manager.broadcast("kitchen", WSEvent.create("ITEM_SUBSTITUTED", {
+        "order_detail_id": detail_id,
+        "old_item_id": before["item_id"],
+        "new_item_id": detail.item_id,
+    }))
     db.refresh(detail)
     return detail

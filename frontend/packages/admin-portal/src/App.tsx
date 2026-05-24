@@ -75,49 +75,85 @@ export default function App() {
     type: "success" | "warning" | "info" | "error";
   }
   const [toasts, setToasts] = useState<Toast[]>([]);
-  const nextToastId = useRef(0);
 
-  const addToast = (message: string, type: Toast["type"] = "info") => {
-    const id = nextToastId.current++;
-    setToasts((prev) => [...prev, { id, message, type }]);
-    setTimeout(() => {
-      setToasts((prev) => prev.filter((t) => t.id !== id));
-    }, 5000);
-  };
+
+  // --- BANNER ĐẾM NGưỢC HẾT MÓN 1:30 (Manager) ---
+  interface OutOfStockBanner {
+    id: number;
+    item_id: number;
+    item_name: string;
+    secondsLeft: number;
+    escalated: boolean;
+  }
+  const [outOfStockBanners, setOutOfStockBanners] = useState<OutOfStockBanner[]>([]);
+  const bannerIdRef = useRef(0);
+
+  // Countdown tick
+  useEffect(() => {
+    if (outOfStockBanners.length === 0) return;
+    const tick = setInterval(() => {
+      setOutOfStockBanners((prev) =>
+        prev
+          .map((b) => {
+            const next = b.secondsLeft - 1;
+            if (next <= 0 && !b.escalated) return { ...b, secondsLeft: 0, escalated: true };
+            return { ...b, secondsLeft: Math.max(0, next) };
+          })
+          .filter((b) => b.secondsLeft > 0 || !b.escalated)
+      );
+    }, 1000);
+    return () => clearInterval(tick);
+  }, [outOfStockBanners.length]);
 
   // WebSocket for Urgent Notifications (OUT_OF_STOCK)
   useEffect(() => {
     if (!token) return;
 
-    const base = import.meta.env.VITE_API_URL || "http://localhost:8000/api";
-    const wsBase = base.replace("http", "ws").replace(/\/api\/?$/, "");
     let ws: WebSocket | null = null;
-    
-    try {
-      ws = new WebSocket(`${wsBase}/ws/staff?token=${token}`);
+    let reconnectTimeout: any = null;
 
-      ws.onmessage = (event) => {
-        try {
-          const data = JSON.parse(event.data);
-          if (data.event === "OUT_OF_STOCK") {
-            const payload = data.payload as { item_id: number; item_name: string };
-            addToast(`THÔNG BÁO KHẨN: Nhà bếp báo HẾT MÓN "${payload.item_name}"! Hệ thống đã tự động ẩn món trên menu trang chủ.`, "error");
-            
-            // Dispatch custom event to notify MenuManager component to refetch
-            const customEvent = new CustomEvent("menu-item-out-of-stock", { detail: payload });
-            window.dispatchEvent(customEvent);
+    const connectWs = () => {
+      const base = import.meta.env.VITE_API_URL || "http://localhost:8000/api";
+      const wsBase = base.replace("http", "ws").replace(/\/api\/?$/, "");
+      
+      try {
+        ws = new WebSocket(`${wsBase}/ws/staff?token=${token}`);
+
+        ws.onmessage = (event) => {
+          try {
+            const data = JSON.parse(event.data);
+            if (data.event === "OUT_OF_STOCK") {
+              const payload = data.payload as { item_id: number; item_name: string };
+              // Khởi động countdown banner 1:30 (BR-009b — Manager nhận thông báo escalate sau 1:30)
+              const bannerId = bannerIdRef.current++;
+              setOutOfStockBanners((prev) => [
+                ...prev.filter((b) => b.item_id !== payload.item_id),
+                { id: bannerId, item_id: payload.item_id, item_name: payload.item_name, secondsLeft: 90, escalated: false },
+              ]);
+              // Refresh menu list
+              const customEvent = new CustomEvent("menu-item-out-of-stock", { detail: payload });
+              window.dispatchEvent(customEvent);
+            }
+          } catch (err) {
+            console.error("WS error parsing message:", err);
           }
-        } catch (err) {
-          console.error("WS error parsing message:", err);
-        }
-      };
+        };
 
-      ws.onerror = (err) => console.error("WS connection error:", err);
-    } catch (err) {
-      console.error("WS initialization failed:", err);
-    }
+        ws.onerror = (err) => console.error("WS connection error:", err);
+        ws.onclose = () => {
+          // Auto-reconnect after 3 seconds
+          reconnectTimeout = setTimeout(connectWs, 3000);
+        };
+      } catch (err) {
+        console.error("WS initialization failed:", err);
+        reconnectTimeout = setTimeout(connectWs, 3000);
+      }
+    };
+
+    connectWs();
 
     return () => {
+      if (reconnectTimeout) clearTimeout(reconnectTimeout);
       ws?.close();
     };
   }, [token]);
@@ -271,6 +307,64 @@ export default function App() {
             </div>
           </div>
         </header>
+
+        {/* ===== OUT-OF-STOCK COUNTDOWN BANNERS (Manager) ===== */}
+        {outOfStockBanners.length > 0 && (
+          <div style={{ padding: "0 24px", display: "flex", flexDirection: "column", gap: "8px", marginTop: "8px" }}>
+            {outOfStockBanners.map((banner) => {
+              const mins = Math.floor(banner.secondsLeft / 60);
+              const secs = banner.secondsLeft % 60;
+              const isUrgent = banner.secondsLeft <= 30;
+              const isEscalated = banner.escalated;
+              return (
+                <div
+                  key={banner.id}
+                  className="glass"
+                  style={{
+                    padding: "12px 20px",
+                    borderRadius: "10px",
+                    borderLeft: `4px solid ${isEscalated ? "#ff2d55" : isUrgent ? "#ff9500" : "#ff4757"}`,
+                    background: isEscalated ? "rgba(255,45,85,0.1)" : "rgba(255,71,87,0.07)",
+                    display: "flex", alignItems: "center", justifyContent: "space-between", gap: "16px",
+                  }}
+                >
+                  <div style={{ flex: 1 }}>
+                    <strong style={{ color: isEscalated ? "#ff2d55" : "var(--text-primary)", fontSize: "0.9rem" }}>
+                      {isEscalated
+                        ? `⚠️ KHẨN [Manager]: Nhân viên chưa xử lý hết món “${banner.item_name}”`
+                        : `🔴 Nhà bếp báo HẾT MÓN: “${banner.item_name}”`}
+                    </strong>
+                    <p style={{ margin: "2px 0 0", fontSize: "0.8rem", color: "var(--text-secondary)" }}>
+                      {isEscalated
+                        ? "Nhân viên chưa xử lý xong trong 1:30. Vui lòng kiểm tra và tắt món nếu cần."
+                        : "Nhân viên đang liên hệ khách để xử lý. Bạn có thể tắt món ngay trong tab Quản lý Menu."}
+                    </p>
+                  </div>
+                  <div style={{ display: "flex", alignItems: "center", gap: "12px", flexShrink: 0 }}>
+                    {!isEscalated && (
+                      <div style={{ fontFamily: "monospace", fontWeight: 800, fontSize: "1.3rem", color: isUrgent ? "#ff9500" : "#ff4757", letterSpacing: "2px" }}>
+                        {mins}:{String(secs).padStart(2, "0")}
+                      </div>
+                    )}
+                    <button
+                      className="btn btn-primary"
+                      style={{ padding: "6px 14px", fontSize: "0.8rem" }}
+                      onClick={() => { setActiveTab("menu"); setOutOfStockBanners((prev) => prev.filter((b) => b.id !== banner.id)); }}
+                    >
+                      Tắt món
+                    </button>
+                    <button
+                      style={{ background: "none", border: "none", cursor: "pointer", color: "var(--text-tertiary)", padding: "4px" }}
+                      onClick={() => setOutOfStockBanners((prev) => prev.filter((b) => b.id !== banner.id))}
+                    >
+                      ✕
+                    </button>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
 
         <section className="admin-content">
           {activeTab === "dashboard" && <DashboardView />}

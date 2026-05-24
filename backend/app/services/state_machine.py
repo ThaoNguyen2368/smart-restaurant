@@ -18,11 +18,11 @@ ORDER_DETAIL_TRANSITIONS: dict[str, dict[str, list[str]]] = {
     },
     "cooking": {
         "done": ["kitchen"],
-        "cancelled": ["manager", "admin"],  # BR-003: Manager mandatory
+        # BR-003 v2.1: cooking → cancelled FORBIDDEN for ALL roles
     },
     "done": {
         "served": ["kitchen", "staff", "manager", "admin"],
-        # BR-008: done → cancelled is FORBIDDEN
+        # BR-003 v2.1: done → cancelled FORBIDDEN for ALL roles
     },
     "served": {
         # BR-008: served is terminal — no transitions allowed
@@ -72,14 +72,14 @@ def validate_order_detail_transition(
     """Validate OrderDetail cooking_status transition.
     Raises HTTPException if transition is invalid.
     """
-    # BR-008: done/served → cancelled is FORBIDDEN
-    if current_status in ("done", "served") and target_status == "cancelled":
+    # BR-003 v2.1: cooking/done/served → cancelled is FORBIDDEN for ALL roles
+    if current_status in ("cooking", "done", "served") and target_status == "cancelled":
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail={
                 "error": "BUSINESS_RULE_VIOLATION",
-                "message": f"Cannot cancel an item in '{current_status}' status. This is a terminal state.",
-                "code": "BR-008",
+                "message": f"Không thể huỷ món ở trạng thái '{current_status}'. Chỉ được huỷ khi món ở trạng thái 'pending' hoặc 'confirmed'.",
+                "code": "BR-003",
             },
         )
 
@@ -95,8 +95,7 @@ def validate_order_detail_transition(
 
     allowed_roles = allowed[target_status]
     if actor_role not in allowed_roles:
-        # BR-003: cooking → cancelled requires Manager
-        code = "BR-003" if current_status == "cooking" and target_status == "cancelled" else None
+        code = None
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail={

@@ -100,6 +100,8 @@ def get_invoice(db: DBSession, session_id: int) -> dict:
     
     for o in orders:
         for d in o.order_details:
+            if d.cooking_status == "cancelled":
+                continue
             lbl = d.split_label or "Unassigned"
             if lbl not in groups:
                 groups[lbl] = {"subtotal": Decimal("0")}
