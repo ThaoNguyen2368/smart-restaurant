@@ -10,7 +10,7 @@ from app.core.config import settings
 from app.core.database import get_db
 from app.core.redis import get_redis, close_redis
 from app.core.security import decode_access_token
-from app.routers import auth, customer, staff, cashier, kitchen, admin, report
+from app.routers import auth, customer, staff, cashier, kitchen, admin, report, report_menu_performance, report_trends, report_service_speed, report_fraud
 from app.websocket.manager import ws_manager
 from app.models.session import Session
 
@@ -59,6 +59,10 @@ app.include_router(cashier.router)
 app.include_router(admin.router)
 app.include_router(customer.router)
 app.include_router(report.router)
+app.include_router(report_menu_performance.router)
+app.include_router(report_trends.router)
+app.include_router(report_service_speed.router)
+app.include_router(report_fraud.router)
 
 
 # ─── Health Check (devops.rule.md Section 7.3) ───

@@ -23,10 +23,16 @@ import {
   Bell,
   DollarSign,
   Calendar,
+  TrendingUp,
+  Grid3x3,
 } from "lucide-react";
 import { api } from "./api";
 import { useAuthStore } from "./store";
 import "./App.css";
+import MenuPerformanceView from "./views/MenuPerformanceView";
+import TrendAnalysisView from "./views/TrendAnalysisView";
+import ServiceSpeedView from "./views/ServiceSpeedView";
+import FraudDetectionView from "./views/FraudDetectionView";
 
 // ─── Helpers ───
 const getLocalDateStr = (d: Date) => {
@@ -67,6 +73,8 @@ export default function App() {
   const [activeTab, setActiveTab] = useState("dashboard");
   const [reportsSubTab, setReportsSubTab] = useState<"revenue" | "top-items" | "service-speed">("revenue");
   const [loading, setLoading] = useState(false);
+  const [showNotificationsDropdown, setShowNotificationsDropdown] = useState(false);
+  const [notifications, setNotifications] = useState([1, 2, 3, 4, 5]);
 
   // Auth State
   const [username, setUsername] = useState("");
@@ -166,7 +174,7 @@ export default function App() {
   // Kiểm tra vai trò và điều chuyển tab nếu không hợp lệ
   useEffect(() => {
     if (user && user.role === "manager") {
-      const allowed = ["dashboard", "reports", "menu"];
+      const allowed = ["dashboard", "reports", "menu", "menu-performance", "trend-analysis", "advanced-service-speed", "fraud-detection"];
       if (!allowed.includes(activeTab)) {
         setActiveTab("dashboard");
       }
@@ -296,8 +304,36 @@ export default function App() {
               </div>
             )}
           </div>
+          <div style={{ padding: "16px 0 8px 16px", fontSize: "0.8rem", color: "var(--text-secondary)", textTransform: "uppercase", letterSpacing: "1px" }}>
+            Báo cáo nâng cao
+          </div>
+          <button
+            className={`nav-item ${activeTab === "advanced-service-speed" ? "active" : ""}`}
+            onClick={() => setActiveTab("advanced-service-speed")}
+          >
+            <Activity size={18} /> Tốc độ phục vụ
+          </button>
+          <button
+            className={`nav-item ${activeTab === "fraud-detection" ? "active" : ""}`}
+            onClick={() => setActiveTab("fraud-detection")}
+          >
+            <ShieldAlert size={18} /> Cảnh báo gian lận
+          </button>
+          <button
+            className={`nav-item ${activeTab === "trend-analysis" ? "active" : ""}`}
+            onClick={() => setActiveTab("trend-analysis")}
+          >
+            <TrendingUp size={18} /> Xu hướng KPI
+          </button>
+          <button
+            className={`nav-item ${activeTab === "menu-performance" ? "active" : ""}`}
+            onClick={() => setActiveTab("menu-performance")}
+          >
+            <Grid3x3 size={18} /> Hiệu suất Menu
+          </button>
           {!isManager && (
             <>
+
               <button
                 className={`nav-item ${activeTab === "staff" ? "active" : ""}`}
                 onClick={() => setActiveTab("staff")}
@@ -331,16 +367,74 @@ export default function App() {
             {activeTab === "menu" && "Quản lý Menu Items"}
             {activeTab === "tables" && "Quản lý Sơ đồ bàn"}
             {activeTab === "reports" && "Thống kê & Báo cáo"}
+            {activeTab === "service-speed" && "Báo cáo Tốc độ Phục vụ"}
+            {activeTab === "fraud-detection" && "Cảnh báo Gian lận (Fraud Detection)"}
+            {activeTab === "trend-analysis" && "Phân tích Xu hướng KPI"}
+            {activeTab === "menu-performance" && "Phân tích Hiệu suất Menu (Menu Engineering)"}
             {activeTab === "staff" && "Quản lý Nhân sự"}
             {activeTab === "tax-config" && "Cấu hình Thuế & Phí"}
             {activeTab === "audit-logs" && "Nhật ký kiểm toán (Audit Logs)"}
           </h1>
           <div className="user-info">
-            <div className="notification-container">
-              <Bell size={18} />
-              <span className="notification-badge">5</span>
+            <div style={{ position: 'relative' }}>
+              <button 
+                className="btn-icon notification-container" 
+                onClick={() => setShowNotificationsDropdown(!showNotificationsDropdown)}
+                style={{ position: 'relative', background: 'transparent', border: 'none', cursor: 'pointer' }}
+              >
+                <Bell size={18} />
+                {notifications.length > 0 && <span className="notification-badge">{notifications.length}</span>}
+              </button>
+              
+              {showNotificationsDropdown && (
+                <div 
+                  style={{ 
+                    position: 'absolute', top: '40px', right: '-10px', width: '320px', 
+                    borderRadius: '12px', padding: '16px', zIndex: 1000, 
+                    background: '#ffffff',
+                    boxShadow: '0 10px 40px rgba(0,0,0,0.15)', border: '1px solid var(--glass-border)'
+                  }}
+                >
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px', borderBottom: '1px solid var(--glass-border)', paddingBottom: '12px' }}>
+                    <h3 style={{ margin: 0, fontSize: '1rem', fontWeight: 600 }}>Thông báo ({notifications.length})</h3>
+                    <button className="btn-icon" onClick={() => setShowNotificationsDropdown(false)}>
+                      <X size={16} />
+                    </button>
+                  </div>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', maxHeight: '300px', overflowY: 'auto' }}>
+                    {notifications.length === 0 ? (
+                      <div style={{ textAlign: 'center', padding: '24px 0', color: 'var(--text-secondary)', fontSize: '0.9rem' }}>
+                        Không có thông báo mới
+                      </div>
+                    ) : (
+                      notifications.map((i) => (
+                        <div key={i} style={{ display: 'flex', gap: '12px', padding: '12px', background: 'rgba(59, 130, 246, 0.05)', borderRadius: '8px', borderLeft: '3px solid var(--accent-primary)' }}>
+                          <div style={{ background: 'rgba(59, 130, 246, 0.1)', padding: '8px', borderRadius: '50%', height: 'fit-content' }}>
+                            <Bell size={14} color="var(--accent-primary)" />
+                          </div>
+                          <div>
+                            <div style={{ fontSize: '0.85rem', fontWeight: 600, color: 'var(--text-primary)', marginBottom: '4px' }}>Cảnh báo hết món #{i}</div>
+                            <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>Món Bún Bò Huế chỉ còn 3 phần trong kho. Vui lòng kiểm tra lại.</div>
+                            <div style={{ fontSize: '0.7rem', color: 'var(--text-secondary)', marginTop: '4px' }}>10 phút trước</div>
+                          </div>
+                        </div>
+                      ))
+                    )}
+                  </div>
+                  {notifications.length > 0 && (
+                    <div style={{ marginTop: '16px', textAlign: 'center' }}>
+                      <button 
+                        onClick={() => setNotifications([])}
+                        style={{ background: 'transparent', border: 'none', color: 'var(--accent-primary)', fontSize: '0.85rem', fontWeight: 600, cursor: 'pointer' }}
+                      >
+                        Đánh dấu đã đọc tất cả
+                      </button>
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
-            <div style={{ textAlign: "right" }}>
+            <div style={{ textAlign: "right", marginLeft: '12px' }}>
               <div style={{ fontWeight: 600, fontSize: "0.95rem" }}>{user?.sub}</div>
               <span style={{ fontSize: "0.75rem", color: "var(--text-secondary)", textTransform: "capitalize" }}>
                 {user?.role === "admin" ? "Quản trị viên (Admin)" : "Quản lý sảnh (Manager)"}
@@ -415,6 +509,10 @@ export default function App() {
           {activeTab === "menu" && <MenuManager />}
           {activeTab === "tables" && !isManager && <TableManager />}
           {activeTab === "reports" && <ReportsView subTab={reportsSubTab} setSubTab={setReportsSubTab} />}
+          {activeTab === "advanced-service-speed" && <ServiceSpeedView />}
+          {activeTab === "fraud-detection" && <FraudDetectionView />}
+          {activeTab === "trend-analysis" && <TrendAnalysisView />}
+          {activeTab === "menu-performance" && <MenuPerformanceView />}
           {activeTab === "staff" && !isManager && <StaffManager />}
           {activeTab === "tax-config" && !isManager && <TaxConfigView />}
           {activeTab === "audit-logs" && !isManager && <AuditLogsView />}
