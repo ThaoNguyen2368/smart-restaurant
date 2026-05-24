@@ -35,32 +35,32 @@ export default function Login() {
             <UserCircle size={40} />
           </div>
         </div>
-        
+
         <h2 style={{ textAlign: 'center', marginBottom: '8px' }}>Staff Portal</h2>
         <p style={{ textAlign: 'center', color: 'var(--text-secondary)', marginBottom: '32px' }}>Vui lòng đăng nhập để tiếp tục</p>
-        
+
         <form onSubmit={handleLogin} style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
           <div>
-            <input 
-              type="text" 
-              placeholder="Tên đăng nhập" 
+            <input
+              type="text"
+              placeholder="Tên đăng nhập"
               value={username}
               onChange={(e) => setUsername(e.target.value)}
               required
             />
           </div>
           <div>
-            <input 
-              type="password" 
-              placeholder="Mật khẩu" 
+            <input
+              type="password"
+              placeholder="Mật khẩu"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               required
             />
           </div>
-          
+
           {error && <p style={{ color: 'var(--accent-danger)', fontSize: '0.9rem', textAlign: 'center' }}>{error}</p>}
-          
+
           <button type="submit" className="btn btn-primary" style={{ padding: '16px', marginTop: '8px' }} disabled={loading}>
             {loading ? <Loader2 className="animate-spin" /> : 'Đăng Nhập'}
           </button>
