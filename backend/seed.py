@@ -618,7 +618,7 @@ try:
             price=25000, 
             display_order=10, 
             description="Sinh tố dâu", 
-            image_url="/images/sinh_to_bo.jpg"
+            image_url="/images/sinh_to_dau.jpg"
         ),
         MenuItem(
             category_id=cats[3].id, 
@@ -626,7 +626,7 @@ try:
             price=25000, 
             display_order=11, 
             description="Sinh tố xoài", 
-            image_url="/images/sinh_to_bo.jpg"
+            image_url="/images/sinh_to_xoai.jpg"
         ),
         MenuItem(
             category_id=cats[3].id, 

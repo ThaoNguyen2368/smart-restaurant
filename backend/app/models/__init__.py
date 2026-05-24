@@ -21,6 +21,7 @@ from app.models.order import Order
 from app.models.order_detail import OrderDetail
 from app.models.payment import Payment
 from app.models.audit_log import AuditLog
+from app.models.shift import CashierShift
 
 __all__ = [
     "Category",
@@ -33,4 +34,5 @@ __all__ = [
     "OrderDetail",
     "Payment",
     "AuditLog",
+    "CashierShift",
 ]

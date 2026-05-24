@@ -43,13 +43,7 @@ export default function Login() {
 
         {/* Vòng tròn Icon */}
         <div style={{ display: 'flex', justifyContent: 'center', marginBottom: '24px' }}>
-          <div className="btn-icon" style={{
-            width: '80px', height: '80px',
-            background: 'var(--status-orange-light)', // Nền cam nhạt
-            color: 'var(--status-orange)', // Icon cam đậm
-            border: 'none', borderRadius: '50%',
-            display: 'flex', alignItems: 'center', justifyContent: 'center'
-          }}>
+          <div className="btn-icon">
             <ChefHat size={40} strokeWidth={2} />
           </div>
         </div>

@@ -1,6 +1,6 @@
 import React, { useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { CreditCard, Loader2, UserCircle } from "lucide-react";
+import { Loader2, UserCircle } from "lucide-react";
 import { api } from "../api";
 import { useAuthStore } from "../store";
 
@@ -28,46 +28,41 @@ export default function Login() {
   };
 
   return (
-    <div className="auth-wrap">
-      <div className="auth-card glass">
-        <div className="auth-icon">
-          <UserCircle size={44} />
+    <div className="animate-fade-in" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', minHeight: '100vh', padding: '20px' }}>
+      <div className="glass" style={{ padding: '40px 32px', borderRadius: 'var(--border-radius-lg)', width: '100%', maxWidth: '400px' }}>
+        <div style={{ display: 'flex', justifyContent: 'center', marginBottom: '24px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: '80px', height: '80px', borderRadius: '50%', background: 'rgba(16, 185, 129, 0.2)', color: 'var(--accent-primary)', border: 'none' }}>
+            <UserCircle size={40} />
+          </div>
         </div>
-        <h2>Cashier Portal</h2>
-        <p className="muted">Vui lòng đăng nhập để tiếp tục</p>
 
-        <form onSubmit={handleLogin} className="auth-form">
-          <label>
-            <span>Tên đăng nhập</span>
+        <h2 style={{ textAlign: 'center', marginBottom: '8px' }}>Cashier Portal</h2>
+        <p style={{ textAlign: 'center', color: 'var(--text-secondary)', marginBottom: '32px' }}>Vui lòng đăng nhập để tiếp tục</p>
+
+        <form onSubmit={handleLogin} style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+          <div className="input-group">
             <input
               type="text"
-              placeholder="cashier01"
+              placeholder="Tên đăng nhập"
               value={username}
               onChange={(e) => setUsername(e.target.value)}
               required
             />
-          </label>
-          <label>
-            <span>Mật khẩu</span>
+          </div>
+          <div className="input-group">
             <input
               type="password"
-              placeholder="••••••••"
+              placeholder="Mật khẩu"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               required
             />
-          </label>
+          </div>
 
-          {error && <p className="error-text">{error}</p>}
+          {error && <p style={{ color: 'var(--accent-danger)', fontSize: '0.9rem', textAlign: 'center' }}>{error}</p>}
 
-          <button type="submit" className="btn btn-primary" disabled={loading}>
-            {loading ? (
-              <Loader2 className="animate-spin" />
-            ) : (
-              <>
-                <CreditCard size={18} /> Đăng nhập
-              </>
-            )}
+          <button type="submit" className="btn btn-primary" style={{ padding: '16px', marginTop: '8px', width: '100%', justifyContent: 'center' }} disabled={loading}>
+            {loading ? <Loader2 className="animate-spin" /> : 'Đăng Nhập'}
           </button>
         </form>
       </div>

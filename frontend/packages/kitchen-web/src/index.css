@@ -233,6 +233,32 @@ body {
 }
 
 /* --- Buttons --- */
+.btn-icon {
+  width: 80px;
+  height: 80px;
+  background: var(--status-orange-light);
+  /* Nền cam nhạt */
+  color: var(--status-orange);
+  /* Icon màu cam */
+  border: none;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  /* Biến con trỏ thành hình bàn tay */
+  transition: all 0.25s ease-in-out;
+  /* Hiệu ứng chuyển động mượt mà */
+}
+
+/* Hiệu ứng khi di chuột vào (Hover) */
+.btn-icon:hover {
+  transform: scale(1.05);
+  /* Phóng to lên 5% */
+  background: #ffedd5;
+  /* Đổi sang màu cam đậm hơn một chút để tạo phản hồi thị giác */
+}
+
 .actions {
   display: flex;
   flex-direction: column;
