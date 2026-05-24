@@ -343,7 +343,7 @@ export default function Home() {
                           </h4>
 
                           {/* Badge: Best Seller */}
-                          {item.id === 1 && (
+                          {item.is_best_seller && (
                             <span style={{
                               background: 'linear-gradient(135deg, #ff9f43, #ff6b6b)', color: 'white',
                               fontSize: '0.65rem', fontWeight: 'bold', padding: '3px 8px', borderRadius: 'var(--border-radius-pill)',

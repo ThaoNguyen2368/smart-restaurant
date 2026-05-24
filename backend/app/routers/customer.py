@@ -35,9 +35,9 @@ def get_session(table_number: int, db: DBSession = Depends(get_db)):
 
 
 @router.get("/menu")
-def get_menu(db: DBSession = Depends(get_db)):
+async def get_menu(db: DBSession = Depends(get_db)):
     """Get full menu (available items only)."""
-    menu = menu_service.get_menu(db)
+    menu = await menu_service.get_menu(db)
     return api_response(menu)
 
 

@@ -16,7 +16,11 @@ from app.models.session import Session
 
 
 from app.services.background_tasks import auto_confirm_loop
+from app.services.best_seller_service import update_best_sellers_cache
+from apscheduler.schedulers.asyncio import AsyncIOScheduler
 import asyncio
+
+scheduler = AsyncIOScheduler()
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -27,9 +31,22 @@ async def lifespan(app: FastAPI):
     # Start background tasks
     bg_task = asyncio.create_task(auto_confirm_loop())
     
+    # Setup scheduler for 2:00 AM daily
+    scheduler.add_job(
+        func=lambda: asyncio.create_task(update_best_sellers_cache(next(get_db()))),
+        trigger="cron",
+        hour=2,
+        minute=0
+    )
+    scheduler.start()
+
+    # Calculate initially on startup
+    asyncio.create_task(update_best_sellers_cache(next(get_db())))
+    
     yield
     
     # Shutdown
+    scheduler.shutdown()
     bg_task.cancel()
     await close_redis()
 

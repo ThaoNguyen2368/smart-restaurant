@@ -15,7 +15,9 @@ from app.websocket.manager import ws_manager
 from app.websocket.events import WSEvent
 
 
-def get_menu(db: DBSession) -> dict:
+from app.services.best_seller_service import get_best_seller_ids
+
+async def get_menu(db: DBSession) -> dict:
     """Get full menu: only available items grouped by category."""
     categories = db.query(Category).order_by(Category.display_order).all()
     items = (
@@ -24,6 +26,9 @@ def get_menu(db: DBSession) -> dict:
         .order_by(MenuItem.display_order)
         .all()
     )
+    
+    best_seller_ids = await get_best_seller_ids()
+    
     return {
         "categories": [
             {"id": c.id, "name": c.name, "display_order": c.display_order}
@@ -35,6 +40,7 @@ def get_menu(db: DBSession) -> dict:
                 "description": i.description, "price": str(i.price),
                 "image_url": i.image_url, "is_available": i.is_available,
                 "display_order": i.display_order,
+                "is_best_seller": i.id in best_seller_ids
             }
             for i in items
         ],

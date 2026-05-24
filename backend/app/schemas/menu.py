@@ -55,6 +55,7 @@ class MenuItemResponse(BaseModel):
     image_url: Optional[str]
     is_available: bool
     display_order: int
+    is_best_seller: bool = False
 
     class Config:
         from_attributes = True

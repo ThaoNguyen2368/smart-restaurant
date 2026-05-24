@@ -7,6 +7,7 @@ export interface MenuItem {
   price: string;
   image_url: string;
   is_available: boolean;
+  is_best_seller?: boolean;
 }
 
 export interface Category {
