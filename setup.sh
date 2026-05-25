@@ -45,11 +45,15 @@ else
     echo -e "${BLUE}ℹ️ File .env đã tồn tại. Bỏ qua bước tạo mới để giữ nguyên cấu hình hiện tại của bạn.${NC}"
 fi
 
-# Bước 4: Khởi dựng các service Docker Compose
-echo -e "${YELLOW}🚀 Đang tiến hành build và khởi động các service bằng Docker Compose...${NC}"
-$DOCKER_COMPOSE_CMD up --build -d
+# Bước 4: Tắt các service đang chạy để tránh bị nghẽn kết nối / khóa dữ liệu (database locks)
+echo -e "${YELLOW}🧹 Đang dọn dẹp các container đang chạy từ trước (nếu có)...${NC}"
+$DOCKER_COMPOSE_CMD down
 
-# Bước 5: Đợi Backend và Database sẵn sàng hoạt động
+# Bước 5: Khởi động trước Database, Redis và Backend để sẵn sàng chạy migrations
+echo -e "${YELLOW}🚀 Đang khởi động Database, Redis và Backend...${NC}"
+$DOCKER_COMPOSE_CMD up -d db redis backend
+
+# Bước 6: Đợi Backend và Database sẵn sàng hoạt động
 echo -e "${YELLOW}⏳ Đang đợi Backend khởi chạy và chạy migration database (có thể mất 30s - 1 phút)...${NC}"
 MAX_ATTEMPTS=30
 ATTEMPT=1
@@ -87,10 +91,16 @@ else
     echo -e "${YELLOW}⚠️ Lưu ý: Hết thời gian chờ backend phản hồi, tiến hành chạy thử seed dữ liệu...${NC}"
 fi
 
-# Bước 6: Khởi chạy seed dữ liệu demo vào Database
+# Bước 7: Khởi chạy seed dữ liệu demo vào Database (Giải phóng kết nối trước để tránh bị khóa)
+echo -e "${YELLOW}🧹 Đang giải phóng các kết nối cũ tới cơ sở dữ liệu để tránh bị khóa (locks)...${NC}"
+$DOCKER_COMPOSE_CMD exec -T db psql -U app_user -d smart_restaurant -c "SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = 'smart_restaurant' AND pid <> pg_backend_pid();" > /dev/null 2>&1 || true
+
 echo -e "${YELLOW}🌱 Đang tiến hành nạp dữ liệu mẫu (seeding database)...${NC}"
-# Sử dụng profile tools để chạy seed
 $DOCKER_COMPOSE_CMD --profile tools run --rm seed
+
+# Bước 8: Khởi động toàn bộ các phân hệ Frontend
+echo -e "${YELLOW}🚀 Đang tiến hành build và khởi động các phân hệ Frontend...${NC}"
+$DOCKER_COMPOSE_CMD up --build -d
 
 echo -e "${BLUE}====================================================${NC}"
 echo -e "${GREEN}🎉 HỆ THỐNG ĐÃ SẴN SÀNG HOẠT ĐỘNG!${NC}"

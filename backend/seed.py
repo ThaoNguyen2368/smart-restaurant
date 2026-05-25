@@ -17,6 +17,19 @@ from sqlalchemy import text
 db = SessionLocal()
 
 try:
+    # # 0. Ngắt tất cả kết nối khác tới db để tránh bị deadlock/block khi TRUNCATE
+    # try:
+    #     db.execute(text("""
+    #         SELECT pg_terminate_backend(pg_stat_activity.pid)
+    #         FROM pg_stat_activity
+    #         WHERE pg_stat_activity.datname = 'smart_restaurant'
+    #           AND pid <> pg_backend_pid();
+    #     """))
+    #     db.commit()
+    # except Exception as e:
+    #     # Bỏ qua nếu db không hỗ trợ pg_terminate_backend (ví dụ SQLite)
+    #     pass
+
     # 1. Xoá dữ liệu cũ (nếu có) bằng TRUNCATE CASCADE để tránh lỗi khoá ngoại
     db.execute(text("TRUNCATE TABLE audit_logs, payments, order_details, orders, sessions, tax_config, tables, menu_items, categories, staff_users RESTART IDENTITY CASCADE;"))
     db.commit()
