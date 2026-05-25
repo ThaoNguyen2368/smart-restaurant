@@ -17,18 +17,18 @@ from sqlalchemy import text
 db = SessionLocal()
 
 try:
-    # # 0. Ngắt tất cả kết nối khác tới db để tránh bị deadlock/block khi TRUNCATE
-    # try:
-    #     db.execute(text("""
-    #         SELECT pg_terminate_backend(pg_stat_activity.pid)
-    #         FROM pg_stat_activity
-    #         WHERE pg_stat_activity.datname = 'smart_restaurant'
-    #           AND pid <> pg_backend_pid();
-    #     """))
-    #     db.commit()
-    # except Exception as e:
-    #     # Bỏ qua nếu db không hỗ trợ pg_terminate_backend (ví dụ SQLite)
-    #     pass
+    # 0. Ngắt tất cả kết nối khác tới db để tránh bị deadlock/block khi TRUNCATE
+    try:
+        db.execute(text("""
+            SELECT pg_terminate_backend(pg_stat_activity.pid)
+            FROM pg_stat_activity
+            WHERE pg_stat_activity.datname = 'smart_restaurant'
+              AND pid <> pg_backend_pid();
+        """))
+        db.commit()
+    except Exception as e:
+        # Bỏ qua nếu db không hỗ trợ pg_terminate_backend (ví dụ SQLite)
+        pass
 
     # 1. Xoá dữ liệu cũ (nếu có) bằng TRUNCATE CASCADE để tránh lỗi khoá ngoại
     db.execute(text("TRUNCATE TABLE audit_logs, payments, order_details, orders, sessions, tax_config, tables, menu_items, categories, staff_users RESTART IDENTITY CASCADE;"))
@@ -546,6 +546,30 @@ try:
             image_url="/images/bia_tiger_lon.jpg"
         ),
         MenuItem(
+            category_id=cats[2].id, 
+            name="Sinh tố bơ", 
+            price=25000, 
+            display_order=22, 
+            description="Sinh tố bơ", 
+            image_url="/images/sinh_to_bo.jpg"
+        ),
+        MenuItem(
+            category_id=cats[2].id, 
+            name="Sinh tố dâu", 
+            price=25000, 
+            display_order=23, 
+            description="Sinh tố dâu", 
+            image_url="/images/sinh_to_dau.jpg"
+        ),
+        MenuItem(
+            category_id=cats[2].id, 
+            name="Sinh tố xoài", 
+            price=25000, 
+            display_order=24, 
+            description="Sinh tố xoài", 
+            image_url="/images/sinh_to_xoai.jpg"
+        ),
+        MenuItem(
             category_id=cats[3].id, 
             name="Chè ba màu", 
             price=20000, 
@@ -619,33 +643,9 @@ try:
         ),
         MenuItem(
             category_id=cats[3].id, 
-            name="Sinh tố bơ", 
-            price=25000, 
-            display_order=9, 
-            description="Sinh tố bơ", 
-            image_url="/images/sinh_to_bo.jpg"
-        ),
-        MenuItem(
-            category_id=cats[3].id, 
-            name="Sinh tố dâu", 
-            price=25000, 
-            display_order=10, 
-            description="Sinh tố dâu", 
-            image_url="/images/sinh_to_dau.jpg"
-        ),
-        MenuItem(
-            category_id=cats[3].id, 
-            name="Sinh tố xoài", 
-            price=25000, 
-            display_order=11, 
-            description="Sinh tố xoài", 
-            image_url="/images/sinh_to_xoai.jpg"
-        ),
-        MenuItem(
-            category_id=cats[3].id, 
             name="Pudding", 
             price=25000, 
-            display_order=12, 
+            display_order=9, 
             description="Pudding", 
             image_url="/images/pudding.jpg"
         ),
@@ -653,7 +653,7 @@ try:
             category_id=cats[3].id, 
             name="Sữa chua trái cây", 
             price=25000, 
-            display_order=13, 
+            display_order=10, 
             description="Sữa chua trái cây", 
             image_url="/images/sua_chua.jpg"
         ),
@@ -661,7 +661,7 @@ try:
             category_id=cats[3].id, 
             name="Trái cây thập cẩm", 
             price=35000, 
-            display_order=14, 
+            display_order=11, 
             description="Trái cây thập cẩm", 
             image_url="/images/trai_cay_thap_cam.jpg"
         )
