@@ -24,7 +24,6 @@ Trước khi bắt đầu, vui lòng đảm bảo máy tính của bạn đã c�
 Mở terminal tại thư mục gốc của dự án và chạy:
 
 ```bash
-chmod +x setup.sh
 ./setup.sh
 ```
 
@@ -65,7 +64,7 @@ Sao chép file `.env.example` thành file `.env` ở thư mục gốc của dự
 Tải các image cần thiết, build mã nguồn các dịch vụ và khởi động chúng dưới chế độ chạy nền (`-d`):
 
 ```bash
-docker compose up --build -d
+docker-compose up --build -d
 ```
 
 *(Nếu sử dụng phiên bản Docker Compose cũ hơn, dùng lệnh `docker-compose up --build -d`)*
@@ -75,7 +74,7 @@ docker compose up --build -d
 Quá trình build và khởi chạy các service frontend/backend sẽ mất khoảng 1-3 phút trong lần chạy đầu tiên. Kiểm tra trạng thái của các container:
 
 ```bash
-docker compose ps
+docker-compose ps
 ```
 
 Khi container `backend` hiển thị trạng thái `healthy`, bạn có thể tiến hành bước tiếp theo.
@@ -85,7 +84,7 @@ Khi container `backend` hiển thị trạng thái `healthy`, bạn có thể ti
 Chạy script seed mẫu để tạo ra thực đơn, các bàn ăn, cấu hình thuế và đặc biệt là các **tài khoản nhân viên kiểm thử**:
 
 ```bash
-docker compose --profile tools run --rm seed
+docker-compose --profile tools run --rm seed
 ```
 
 ---
@@ -129,32 +128,32 @@ Trong quá trình vận hành, giảng viên hoặc đội phát triển có th�
 * **Xem logs của hệ thống API backend:**
 
   ```bash
-  docker compose logs -f backend
+  docker-compose logs -f backend
   ```
 * **Dừng tất cả các dịch vụ (không mất dữ liệu):**
 
   ```bash
-  docker compose stop
+  docker-compose stop
   ```
 * **Khởi động lại các dịch vụ sau khi stop:**
 
   ```bash
-  docker compose start
+  docker-compose start
   ```
 * **Hạ toàn bộ hệ thống và xóa các container:**
 
   ```bash
-  docker compose down
+  docker-compose down
   ```
 * **Reset sạch sẽ Database và làm mới dữ liệu (Xóa dữ liệu cũ để chạy lại từ đầu):**
 
   ```bash
-  docker compose down -v
-  docker compose up -d
-  docker compose --profile tools run --rm seed
+  docker-compose down -v
+  docker-compose up -d
+  docker-compose --profile tools run --rm seed
   ```
 
-  *(Lưu ý: Lệnh `docker compose down -v` sẽ xóa hoàn toàn volume dữ liệu PostgreSQL)*
+  *(Lưu ý: Lệnh `docker-compose down -v` sẽ xóa hoàn toàn volume dữ liệu PostgreSQL)*
 
 ---
 
