@@ -17,16 +17,21 @@ Trước khi bắt đầu, vui lòng đảm bảo máy tính của bạn đã c�
 
 ## Cách 1: Cài đặt Tự động bằng Script (Khuyến nghị)
 
-Để thuận tiện nhất cho việc kiểm thử của giảng viên, dự án đã cung cấp một script shell tự động hóa toàn bộ quá trình: sao chép file cấu hình môi trường, xây dựng các container, di chuyển cơ sở dữ liệu (migrations) và nạp dữ liệu mẫu (seeding).
+Để thuận tiện nhất cho việc kiểm thử của giảng viên, dự án đã cung cấp script tự động hóa toàn bộ quá trình: sao chép file cấu hình môi trường, xây dựng các container, di chuyển cơ sở dữ liệu (migrations) và nạp dữ liệu mẫu (seeding).
 
 > [!NOTE]
-> Trên hệ điều hành **macOS** hoặc **Linux**, hãy mở terminal trong thư mục gốc của dự án và chạy lệnh sau:
-
-```bash
-./setup.sh
-```
-
-*(Nếu gặp lỗi phân quyền, hãy cấp quyền thực thi cho script trước khi chạy: `chmod +x setup.sh && ./setup.sh`)*
+> * **Trên macOS / Linux**: Mở terminal trong thư mục gốc của dự án và chạy lệnh:
+>   ```bash
+>   ./setup.sh
+>   ```
+>   *(Nếu gặp lỗi phân quyền, hãy cấp quyền thực thi cho script trước khi chạy: `chmod +x setup.sh && ./setup.sh`)*
+>
+> * **Trên Windows**:
+>   * **Cách nhanh nhất**: Double-click (nhấp đúp chuột) vào tệp **`setup.bat`** ở thư mục gốc.
+>   * Hoặc mở **PowerShell** trong thư mục gốc của dự án và chạy:
+>     ```powershell
+>     .\setup.ps1
+>     ```
 
 Sau khi chạy xong, script sẽ in ra toàn bộ liên kết truy cập các phân hệ và thông tin tài khoản dùng để đăng nhập kiểm thử.
 
