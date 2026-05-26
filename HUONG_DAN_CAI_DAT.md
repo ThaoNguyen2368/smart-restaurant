@@ -27,7 +27,7 @@ Mở terminal tại thư mục gốc của dự án và chạy:
 ./setup.sh
 ```
 
-### 🪟 Đối với hệ điều hành Windows (Sử dụng Git Bash trong VS Code)
+### 🪟 Đối với hệ điều hành Windows (Sử dụng Git Bash	 trong VS Code)
 
 Nếu giảng viên hoặc bạn mở dự án bằng **VS Code** trên Windows:
 

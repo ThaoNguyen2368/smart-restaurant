@@ -1,3 +1,4 @@
+
 # HƯỚNG DẪN CÀI ĐẶT & KIỂM THỬ HỆ THỐNG
 
 ## Smart Restaurant OS — Hệ Điều Hành Quản Lý Nhà Hàng Thông Minh
@@ -24,11 +25,10 @@ Trước khi bắt đầu, vui lòng đảm bảo máy tính của bạn đã c�
 Mở terminal tại thư mục gốc của dự án và chạy:
 
 ```bash
-chmod +x setup.sh
 ./setup.sh
 ```
 
-### 🪟 Đối với hệ điều hành Windows (Sử dụng Git Bash trong VS Code)
+### 🪟 Đối với hệ điều hành Windows (Sử dụng Git Bash	 trong VS Code)
 
 Nếu giảng viên hoặc bạn mở dự án bằng **VS Code** trên Windows:
 
@@ -129,32 +129,32 @@ Trong quá trình vận hành, giảng viên hoặc đội phát triển có th�
 * **Xem logs của hệ thống API backend:**
 
   ```bash
-  docker compose logs -f backend
+  docker-compose logs -f backend
   ```
 * **Dừng tất cả các dịch vụ (không mất dữ liệu):**
 
   ```bash
-  docker compose stop
+  docker-compose stop
   ```
 * **Khởi động lại các dịch vụ sau khi stop:**
 
   ```bash
-  docker compose start
+  docker-compose start
   ```
 * **Hạ toàn bộ hệ thống và xóa các container:**
 
   ```bash
-  docker compose down
+  docker-compose down
   ```
 * **Reset sạch sẽ Database và làm mới dữ liệu (Xóa dữ liệu cũ để chạy lại từ đầu):**
 
   ```bash
-  docker compose down -v
-  docker compose up -d
-  docker compose --profile tools run --rm seed
+  docker-compose down -v
+  docker-compose up -d
+  docker-compose --profile tools run --rm seed
   ```
 
-  *(Lưu ý: Lệnh `docker compose down -v` sẽ xóa hoàn toàn volume dữ liệu PostgreSQL)*
+  *(Lưu ý: Lệnh `docker-compose down -v` sẽ xóa hoàn toàn volume dữ liệu PostgreSQL)*
 
 ---
 
