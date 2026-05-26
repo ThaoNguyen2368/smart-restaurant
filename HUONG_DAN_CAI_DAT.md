@@ -17,21 +17,31 @@ Trước khi bắt đầu, vui lòng đảm bảo máy tính của bạn đã c�
 
 ## Cách 1: Cài đặt Tự động bằng Script (Khuyến nghị)
 
-Để thuận tiện nhất cho việc kiểm thử của giảng viên, dự án đã cung cấp script tự động hóa toàn bộ quá trình: sao chép file cấu hình môi trường, xây dựng các container, di chuyển cơ sở dữ liệu (migrations) và nạp dữ liệu mẫu (seeding).
+Để thuận tiện nhất cho việc kiểm thử của giảng viên, dự án đã cung cấp các script tự động hóa toàn bộ quá trình: sao chép file cấu hình môi trường, xây dựng các container, di chuyển cơ sở dữ liệu (migrations) và nạp dữ liệu mẫu (seeding).
 
-> [!NOTE]
-> * **Trên macOS / Linux**: Mở terminal trong thư mục gốc của dự án và chạy lệnh:
->   ```bash
->   ./setup.sh
->   ```
->   *(Nếu gặp lỗi phân quyền, hãy cấp quyền thực thi cho script trước khi chạy: `chmod +x setup.sh && ./setup.sh`)*
->
-> * **Trên Windows**:
->   * **Cách nhanh nhất**: Double-click (nhấp đúp chuột) vào tệp **`setup.bat`** ở thư mục gốc.
->   * Hoặc mở **PowerShell** trong thư mục gốc của dự án và chạy:
->     ```powershell
->     .\setup.ps1
->     ```
+### 🍎 Đối với hệ điều hành macOS hoặc Linux
+
+Mở terminal tại thư mục gốc của dự án và chạy:
+
+```bash
+chmod +x setup.sh
+./setup.sh
+```
+
+### 🪟 Đối với hệ điều hành Windows (Sử dụng Git Bash trong VS Code)
+
+Nếu giảng viên hoặc bạn mở dự án bằng **VS Code** trên Windows:
+
+1. Mở Terminal trong VS Code bằng phím tắt ``Ctrl + ` `` (hoặc chọn menu **Terminal** > **New Terminal**).
+2. Click vào menu thả xuống ở góc trên bên phải của khung Terminal (bên cạnh dấu `+`) và chọn **Git Bash** để chuyển đổi terminal.
+3. Nhập lệnh cấp quyền thực thi cho file script:
+   ```bash
+   chmod +x setup.sh
+   ```
+4. Khởi chạy script cài đặt tự động:
+   ```bash
+   ./setup.sh
+   ```
 
 Sau khi chạy xong, script sẽ in ra toàn bộ liên kết truy cập các phân hệ và thông tin tài khoản dùng để đăng nhập kiểm thử.
 
@@ -117,22 +127,27 @@ Sau khi chạy lệnh nạp dữ liệu mẫu (Seed Database), các tài khoản
 Trong quá trình vận hành, giảng viên hoặc đội phát triển có thể sử dụng các lệnh sau:
 
 * **Xem logs của hệ thống API backend:**
+
   ```bash
   docker compose logs -f backend
   ```
 * **Dừng tất cả các dịch vụ (không mất dữ liệu):**
+
   ```bash
   docker compose stop
   ```
 * **Khởi động lại các dịch vụ sau khi stop:**
+
   ```bash
   docker compose start
   ```
 * **Hạ toàn bộ hệ thống và xóa các container:**
+
   ```bash
   docker compose down
   ```
 * **Reset sạch sẽ Database và làm mới dữ liệu (Xóa dữ liệu cũ để chạy lại từ đầu):**
+
   ```bash
   docker compose down -v
   docker compose up -d
