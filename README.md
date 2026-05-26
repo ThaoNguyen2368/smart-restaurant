@@ -55,7 +55,7 @@ Sao chép file `.env.example` thành file `.env` ở thư mục gốc của dự
 Tải các image cần thiết, build mã nguồn các dịch vụ và khởi động chúng dưới chế độ chạy nền (`-d`):
 
 ```bash
-docker compose up --build -d
+docker-compose up --build -d
 ```
 
 *(Nếu sử dụng phiên bản Docker Compose cũ hơn, dùng lệnh `docker-compose up --build -d`)*
@@ -65,7 +65,7 @@ docker compose up --build -d
 Quá trình build và khởi chạy các service frontend/backend sẽ mất khoảng 1-3 phút trong lần chạy đầu tiên. Kiểm tra trạng thái của các container:
 
 ```bash
-docker compose ps
+docker-compose ps
 ```
 
 Khi container `backend` hiển thị trạng thái `healthy`, bạn có thể tiến hành bước tiếp theo.
@@ -75,7 +75,7 @@ Khi container `backend` hiển thị trạng thái `healthy`, bạn có thể ti
 Chạy script seed mẫu để tạo ra thực đơn, các bàn ăn, cấu hình thuế và đặc biệt là các **tài khoản nhân viên kiểm thử**:
 
 ```bash
-docker compose --profile tools run --rm seed
+docker-compose --profile tools run --rm seed
 ```
 
 ---
